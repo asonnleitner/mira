@@ -1,3 +1,4 @@
+import type { SpanContext } from '@opentelemetry/api'
 import type { SessionContext } from '~/agent/context-assembler'
 import type { BotContext } from '~/bot/context'
 import type { SessionType } from '~/db/schema'
@@ -10,6 +11,8 @@ import { config } from '~/config'
 import { createPatient, findPatientByTelegramId } from '~/db/queries/patients'
 import { createSession, findActiveSession, saveMessage, updateSessionLastMessage, updateSessionSdkId } from '~/db/queries/sessions'
 import { appendMessage, createTranscript } from '~/storage/transcript'
+import { logger } from '~/telemetry/logger'
+import { captureSpanContext, withLinkedSpan } from '~/telemetry/tracing'
 
 interface MessageEntry {
   text: string
@@ -20,6 +23,7 @@ interface MessageEntry {
 interface ChatBuffer {
   timer: Timer
   messages: MessageEntry[]
+  spanContexts: SpanContext[]
   abortController?: AbortController
   ctx: BotContext
   chatMode: SessionType
@@ -71,10 +75,11 @@ export async function handleMessage(ctx: BotContext): Promise<void> {
     patientId: patient.id,
   }
 
-  bufferMessage(ctx, chatId, chatMode, messageEntry)
+  const spanContext = captureSpanContext()
+  bufferMessage(ctx, chatId, chatMode, messageEntry, spanContext)
 }
 
-function bufferMessage(ctx: BotContext, chatId: number, chatMode: SessionType, message: MessageEntry): void {
+function bufferMessage(ctx: BotContext, chatId: number, chatMode: SessionType, message: MessageEntry, spanContext?: SpanContext): void {
   const existing = chatBuffer.get(chatId)
 
   if (existing) {
@@ -88,12 +93,15 @@ function bufferMessage(ctx: BotContext, chatId: number, chatMode: SessionType, m
     }
 
     existing.messages.push(message)
+    if (spanContext)
+      existing.spanContexts.push(spanContext)
     existing.ctx = ctx // Use latest ctx for reply
   }
   else {
     chatBuffer.set(chatId, {
       timer: null as any,
       messages: [message],
+      spanContexts: spanContext ? [spanContext] : [],
       ctx,
       chatMode,
     })
@@ -109,20 +117,25 @@ function bufferMessage(ctx: BotContext, chatId: number, chatMode: SessionType, m
     const ac = new AbortController()
     buffer.abortController = ac
     const messages = [...buffer.messages]
+    const links = buffer.spanContexts.map(sc => ({ context: sc }))
     buffer.messages = []
+    buffer.spanContexts = []
 
     try {
-      await processTherapyMessage(buffer.ctx, chatId, chatMode, messages, ac.signal)
-      // Success — clean up buffer
+      await withLinkedSpan('bot.processTherapyMessage', {
+        'telegram.chat_id': chatId,
+        'bot.chat_mode': chatMode,
+        'bot.message_count': messages.length,
+      }, links, async () => {
+        await processTherapyMessage(buffer.ctx, chatId, chatMode, messages, ac.signal)
+      })
       chatBuffer.delete(chatId)
     }
     catch (err) {
       if (ac.signal.aborted) {
-        // Aborted — messages already re-buffered by the new incoming message
-        // The new message's debounce will re-trigger processing
         return
       }
-      console.error('Error processing therapy message:', err)
+      logger.error('Error processing therapy message:', err)
       chatBuffer.delete(chatId)
     }
   }, debounceMs)
@@ -171,12 +184,11 @@ async function processTherapyMessage(
       // Create transcript file
       await createTranscript(transcriptPath, {
         type: chatMode,
-        patient:
-          chatMode === 'couples'
-            ? messages.map(m => m.from).join(' & ')
-            : (ctx.from!.username
-                ? `@${ctx.from!.username}`
-                : ctx.from!.first_name || 'Patient'),
+        patient: chatMode === 'couples'
+          ? messages.map(m => m.from).join(' & ')
+          : (ctx.from!.username
+              ? `@${ctx.from!.username}`
+              : ctx.from!.first_name || 'Patient'),
         sessionId: session.id,
         startedAt: new Date(),
       })
@@ -291,7 +303,7 @@ async function processTherapyMessage(
 
     // Run post-response pipeline async (don't block user)
     extractArtifacts(sessionCtx, combinedMessage, response).catch(err =>
-      console.error('Artifact extraction error:', err),
+      logger.error('Artifact extraction error:', err),
     )
   }
   finally {

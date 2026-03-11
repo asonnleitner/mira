@@ -10,6 +10,10 @@ const envSchema = z.object({
   POSTGRES_USER: z.string(),
   POSTGRES_PORT: z.string(),
   POSTGRES_HOST: z.string(),
+  OTEL_SERVICE_NAME: z.string().default('therapy-bot'),
+  OTEL_SERVICE_VERSION: z.string().default('1.0.0'),
+  ENVIRONMENT: z.string().default('development'),
+  LOG_LEVEL: z.string().default('info'),
 })
 
 const parsed = envSchema.safeParse(process.env)

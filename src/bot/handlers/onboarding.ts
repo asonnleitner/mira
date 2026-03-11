@@ -5,9 +5,11 @@ import { join } from 'node:path'
 import { createSdkMcpServer, query, tool } from '@anthropic-ai/claude-agent-sdk'
 import * as z from 'zod'
 import { config } from '~/config'
+import { MODELS } from '~/constants'
 import { completeOnboarding, createPatient, findPatientByTelegramId } from '~/db/queries/patients'
 import { PatientProfileSchema } from '~/db/schema/patients'
 import { writeProfile } from '~/storage/profile'
+import { withGenAiSpan } from '~/telemetry/tracing'
 
 interface OnboardingSession {
   sdkSessionId?: string
@@ -103,45 +105,52 @@ function createOnboardingTools(ctx: BotContext, telegramId: number) {
 }
 
 async function runOnboardingAgent(ctx: BotContext, telegramId: number, userMessage: string, sdkSessionId?: string): Promise<string> {
-  const { server } = createOnboardingTools(ctx, telegramId)
-  const languageCode = ctx.from?.language_code
+  return withGenAiSpan('invoke_agent', MODELS.HAIKU, {
+    'gen_ai.agent.name': 'onboarding',
+    'telegram.user_id': telegramId,
+  }, async (span) => {
+    const { server } = createOnboardingTools(ctx, telegramId)
+    const languageCode = ctx.from?.language_code
 
-  const languageHint = languageCode
-    ? `\nThe user's Telegram language is set to "${languageCode}". Consider starting in this language unless they write in a different one.`
-    : ''
+    const languageHint = languageCode
+      ? `\nThe user's Telegram language is set to "${languageCode}". Consider starting in this language unless they write in a different one.`
+      : ''
 
-  let response = ''
-  let newSdkSessionId = ''
+    let response = ''
+    let newSdkSessionId = ''
 
-  const options: Options = {
-    systemPrompt: ONBOARDING_SYSTEM_PROMPT + languageHint,
-    model: 'claude-haiku-4-5-20251001',
-    mcpServers: { 'onboarding-tools': server },
-    allowedTools: ['mcp__onboarding-tools__complete_onboarding'],
-    tools: [],
-    maxTurns: 3,
-    maxBudgetUsd: 0.02,
-    persistSession: true,
-    ...(sdkSessionId ? { resume: sdkSessionId } : {}),
-  }
-
-  const q = query({ prompt: userMessage, options })
-
-  for await (const message of q) {
-    if (message.type === 'result' && message.subtype === 'success') {
-      response = message.result
-      newSdkSessionId = message.session_id
+    const options: Options = {
+      systemPrompt: ONBOARDING_SYSTEM_PROMPT + languageHint,
+      model: MODELS.HAIKU,
+      mcpServers: { 'onboarding-tools': server },
+      allowedTools: ['mcp__onboarding-tools__complete_onboarding'],
+      tools: [],
+      maxTurns: 3,
+      maxBudgetUsd: 0.02,
+      persistSession: true,
+      ...(sdkSessionId ? { resume: sdkSessionId } : {}),
     }
-  }
 
-  // Update stored SDK session ID
-  const state = onboardingState.get(telegramId)
+    const q = query({ prompt: userMessage, options })
 
-  if (state) {
-    state.sdkSessionId = newSdkSessionId
-  }
+    for await (const message of q) {
+      if (message.type === 'result' && message.subtype === 'success') {
+        response = message.result
+        newSdkSessionId = message.session_id
+      }
+    }
 
-  return response
+    // Update stored SDK session ID
+    const state = onboardingState.get(telegramId)
+
+    if (state) {
+      state.sdkSessionId = newSdkSessionId
+    }
+
+    span.setAttribute('gen_ai.conversation.id', newSdkSessionId)
+
+    return response
+  })
 }
 
 export async function startOnboarding(ctx: BotContext): Promise<void> {

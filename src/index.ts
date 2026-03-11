@@ -1,4 +1,7 @@
+import '~/telemetry/config'
+/* eslint-disable perfectionist/sort-imports */
 import process from 'node:process'
+import { logger } from '~/telemetry/logger'
 import { createBot } from './bot/bot'
 
 const bot = createBot()
@@ -8,23 +11,23 @@ async function main() {
   try {
     await bot.start({
       onStart: (botInfo) => {
-        console.warn(`Bot @${botInfo.username} started!`)
+        logger.info(`Bot @${botInfo.username} started!`)
       },
     })
   }
   catch (err) {
-    console.error('Bot crashed:', err)
+    logger.error('Bot crashed:', err)
     process.exit(1)
   }
 }
 
 async function shutdown() {
-  console.warn('Shutting down...')
+  logger.warn('Shutting down...')
   try {
     await bot.stop()
   }
   catch (err) {
-    console.error('Error during shutdown:', err)
+    logger.error('Error during shutdown:', err)
   }
   finally {
     process.exit(0)
@@ -35,10 +38,10 @@ async function shutdown() {
 process.on('SIGINT', shutdown)
 process.on('SIGTERM', shutdown)
 process.on('unhandledRejection', (err) => {
-  console.error('Unhandled rejection:', err)
-  shutdown().catch(console.error)
+  logger.error('Unhandled rejection:', err)
+  shutdown().catch(err => logger.error('Shutdown error:', err))
 })
 
 main().catch((err) => {
-  console.error('Error during shutdown:', err)
+  logger.error('Error during startup:', err)
 })

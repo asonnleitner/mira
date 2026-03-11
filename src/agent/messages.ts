@@ -1,52 +1,59 @@
 import { query } from '@anthropic-ai/claude-agent-sdk'
+import { MODELS } from '~/constants'
+import { logger } from '~/telemetry/logger'
+import { withGenAiSpan } from '~/telemetry/tracing'
 
 export async function generateMessage(opts: {
   purpose: string
   context?: Record<string, unknown>
   language?: string
 }): Promise<string> {
-  const languageHint = opts.language && opts.language !== 'auto'
-    ? `Respond in ${opts.language}.`
-    : 'Respond in the same language as the user context suggests, defaulting to English if unclear.'
+  return withGenAiSpan('chat', MODELS.HAIKU, {
+    'bot.purpose': opts.purpose,
+  }, async () => {
+    const languageHint = opts.language && opts.language !== 'auto'
+      ? `Respond in ${opts.language}.`
+      : 'Respond in the same language as the user context suggests, defaulting to English if unclear.'
 
-  const systemPrompt = [
-    'You are a warm, supportive AI therapy companion generating a single short message for a Telegram bot.',
-    'Generate ONLY the message text — no markdown headers, no quotes, no meta commentary.',
-    'Keep it concise (1-3 sentences max).',
-    'Be warm and professional.',
-    languageHint,
-  ].join(' ')
+    const systemPrompt = [
+      'You are a warm, supportive AI therapy companion generating a single short message for a Telegram bot.',
+      'Generate ONLY the message text — no markdown headers, no quotes, no meta commentary.',
+      'Keep it concise (1-3 sentences max).',
+      'Be warm and professional.',
+      languageHint,
+    ].join(' ')
 
-  const prompt = opts.context
-    ? `Purpose: ${opts.purpose}\nContext: ${JSON.stringify(opts.context)}`
-    : `Purpose: ${opts.purpose}`
+    const prompt = opts.context
+      ? `Purpose: ${opts.purpose}\nContext: ${JSON.stringify(opts.context)}`
+      : `Purpose: ${opts.purpose}`
 
-  try {
-    let response = ''
+    try {
+      let response = ''
 
-    const q = query({
-      prompt,
-      options: {
-        systemPrompt,
-        model: 'claude-haiku-4-5-20251001',
-        maxTurns: 1,
-        maxBudgetUsd: 0.005,
-        tools: [],
-      },
-    })
+      const q = query({
+        prompt,
+        options: {
+          systemPrompt,
+          model: MODELS.HAIKU,
+          maxTurns: 1,
+          maxBudgetUsd: 0.005,
+          tools: [],
+        },
+      })
 
-    for await (const message of q) {
-      if (message.type === 'result' && message.subtype === 'success') {
-        response = message.result
+      for await (const message of q) {
+        if (message.type === 'result' && message.subtype === 'success') {
+          response = message.result
+        }
       }
-    }
 
-    return response || getFallback(opts.purpose)
-  }
-  catch (err) {
-    console.error('generateMessage failed:', err)
-    return getFallback(opts.purpose)
-  }
+      return response || getFallback(opts.purpose)
+    }
+    catch (err) {
+      logger.error('generateMessage failed:', err)
+      return getFallback(opts.purpose)
+    }
+  })
 }
 
 function getFallback(purpose: string): string {
