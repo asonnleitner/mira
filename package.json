@@ -1,19 +1,27 @@
 {
+  "name": "therapy-bot",
   "type": "module",
   "scripts": {
-    "build": "nitro build",
-    "dev": "nitro dev",
-    "preview": "npx srvx --prod .output/"
-  },
-  "devDependencies": {
-    "drizzle-kit": "^1.0.0-beta.16-ea816b6",
-    "nitro": "latest",
-    "rolldown": "latest"
+    "dev": "bun run src/index.ts",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "drizzle-kit migrate",
+    "db:push": "drizzle-kit push",
+    "db:studio": "drizzle-kit studio",
+    "lint": "eslint",
+    "lint:fix": "eslint --fix",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.2.72",
-    "drizzle-orm": "^1.0.0-beta.16-ea816b6",
+    "drizzle-orm": "1.0.0-beta.17-875d549",
     "grammy": "^1.41.1",
     "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@antfu/eslint-config": "^7.7.0",
+    "@types/bun": "^1.3.10",
+    "drizzle-kit": "1.0.0-beta.16-ea816b6",
+    "eslint": "^10.0.3",
+    "typescript": "^5.9.3"
   }
 }

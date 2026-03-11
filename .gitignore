@@ -1,9 +1,8 @@
 node_modules
 dist
-.data
-.nitro
-.cache
-.output
 .env
 .env.local
-.idea
+data/
+drizzle/
+*.log
+.claude/
