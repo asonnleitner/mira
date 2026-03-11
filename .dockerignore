@@ -1,0 +1,9 @@
+node_modules
+.git
+.claude
+.env
+.env.local
+data/
+drizzle/
+*.log
+.idea
