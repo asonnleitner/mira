@@ -1,6 +1,8 @@
 import { mkdir } from 'node:fs/promises'
 import { dirname } from 'node:path'
 
+const MESSAGE_HEADER_RE = /(?=\n## \d{2}:\d{2}:\d{2} — )/
+
 function formatTime(date: Date): string {
   return date.toISOString().slice(11, 19) // HH:MM:SS
 }
@@ -58,8 +60,7 @@ export async function readRecentMessages(
   if (!content)
     return ''
 
-  // Split on message headers (## HH:MM:SS — Role)
-  const blocks = content.split(/(?=\n## \d{2}:\d{2}:\d{2} — )/)
+  const blocks = content.split(MESSAGE_HEADER_RE)
   const header = blocks[0] // frontmatter
   const messages = blocks.slice(1)
 

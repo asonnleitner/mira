@@ -8,7 +8,7 @@ async function main() {
   try {
     await bot.start({
       onStart: (botInfo) => {
-        console.log(`Bot @${botInfo.username} started!`)
+        console.warn(`Bot @${botInfo.username} started!`)
       },
     })
   }
@@ -19,7 +19,7 @@ async function main() {
 }
 
 async function shutdown() {
-  console.log('Shutting down...')
+  console.warn('Shutting down...')
   try {
     await bot.stop()
   }

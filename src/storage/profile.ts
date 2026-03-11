@@ -19,12 +19,12 @@ export async function writeProfile(
 
   if (profile.preferredLanguage) {
     sections.push(
-      `**Preferred Language:** ${profile.preferredLanguage === 'cs' ? 'Czech' : 'English'}`,
+      `**Preferred Language:** ${profile.preferredLanguage}`,
     )
   }
 
-  if (profile.age)
-    sections.push(`**Age:** ${profile.age}`)
+  if (profile.dateOfBirth)
+    sections.push(`**Date of Birth:** ${profile.dateOfBirth}`)
   if (profile.gender)
     sections.push(`**Gender:** ${profile.gender}`)
   if (profile.occupation)

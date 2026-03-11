@@ -1,7 +1,12 @@
 import type { BotContext } from '~/bot/context'
+import { generateMessage } from '~/agent/messages'
 import { startOnboarding } from '~/bot/handlers/onboarding'
 import { findPatientByTelegramId } from '~/db/queries/patients'
 import { findActiveSession, getSessionCount, updateSessionStatus } from '~/db/queries/sessions'
+
+function getLanguage(ctx: BotContext, patient?: { profile?: { preferredLanguage?: string } | null } | null): string {
+  return patient?.profile?.preferredLanguage ?? ctx.from?.language_code ?? 'auto'
+}
 
 export async function handleStart(ctx: BotContext): Promise<void> {
   const telegramId = ctx.from!.id
@@ -14,74 +19,110 @@ export async function handleStart(ctx: BotContext): Promise<void> {
 
   ctx.session.patientId = patient.id
 
-  const lang = patient.profile?.preferredLanguage
-  const msg = lang === 'cs'
-    ? `Vitejte zpet, ${patient.firstName || ''}! Jsem tu pro vas. Napiste mi cokoliv, co mate na srdci.`
-    : `Welcome back, ${patient.firstName || ''}! I'm here for you. Write me anything that's on your mind.`
+  const msg = await generateMessage({
+    purpose: 'welcome_back',
+    context: { patientName: patient.firstName },
+    language: getLanguage(ctx, patient),
+  })
 
   await ctx.reply(msg)
 }
 
 export async function handleStatus(ctx: BotContext): Promise<void> {
   const chatId = ctx.chat!.id
+  const patient = await findPatientByTelegramId(ctx.from!.id)
   const session = await findActiveSession(chatId)
 
   if (!session) {
-    await ctx.reply('No active session. Send a message to start one.')
+    const msg = await generateMessage({
+      purpose: 'no_active_session',
+      language: getLanguage(ctx, patient),
+    })
+    await ctx.reply(msg)
     return
   }
 
   const duration = Date.now() - session.startedAt.getTime()
   const minutes = Math.floor(duration / 60_000)
 
-  await ctx.reply(
-    `Session #${session.id}\n`
-    + `Type: ${session.type}\n`
-    + `Status: ${session.status}\n`
-    + `Messages: ${session.messageCount}\n`
-    + `Duration: ${minutes} minutes\n`
-    + `Started: ${session.startedAt.toISOString()}`,
-  )
+  const msg = await generateMessage({
+    purpose: 'session_status',
+    context: {
+      sessionId: session.id,
+      type: session.type,
+      status: session.status,
+      messageCount: session.messageCount,
+      durationMinutes: minutes,
+      startedAt: session.startedAt.toISOString(),
+    },
+    language: getLanguage(ctx, patient),
+  })
+
+  await ctx.reply(msg)
 }
 
 export async function handlePause(ctx: BotContext): Promise<void> {
   const chatId = ctx.chat!.id
+  const patient = await findPatientByTelegramId(ctx.from!.id)
   const session = await findActiveSession(chatId)
 
   if (!session) {
-    await ctx.reply('No active session to pause.')
+    const msg = await generateMessage({
+      purpose: 'no_active_session',
+      context: { action: 'pause' },
+      language: getLanguage(ctx, patient),
+    })
+    await ctx.reply(msg)
     return
   }
 
   await updateSessionStatus(session.id, 'paused')
-  await ctx.reply(
-    'Session paused. Use /resume when you\'re ready to continue.',
-  )
+
+  const msg = await generateMessage({
+    purpose: 'session_paused',
+    language: getLanguage(ctx, patient),
+  })
+
+  await ctx.reply(msg)
 }
 
 export async function handleResume(ctx: BotContext): Promise<void> {
   const chatId = ctx.chat!.id
-
-  // Find most recent paused session
+  const patient = await findPatientByTelegramId(ctx.from!.id)
   const sessions = await getSessionCount(chatId)
   const paused = sessions.find(s => s.status === 'paused')
 
   if (!paused) {
-    await ctx.reply('No paused session found. Send a message to start a new one.')
+    const msg = await generateMessage({
+      purpose: 'no_paused_session',
+      language: getLanguage(ctx, patient),
+    })
+    await ctx.reply(msg)
     return
   }
 
   await updateSessionStatus(paused.id, 'active')
   ctx.session.activeSessionId = paused.id
-  await ctx.reply('Session resumed. I\'m here whenever you\'re ready.')
+
+  const msg = await generateMessage({
+    purpose: 'session_resumed',
+    language: getLanguage(ctx, patient),
+  })
+
+  await ctx.reply(msg)
 }
 
 export async function handleHistory(ctx: BotContext): Promise<void> {
   const chatId = ctx.chat!.id
+  const patient = await findPatientByTelegramId(ctx.from!.id)
   const sessions = await getSessionCount(chatId)
 
   if (sessions.length === 0) {
-    await ctx.reply('No session history yet.')
+    const msg = await generateMessage({
+      purpose: 'no_history',
+      language: getLanguage(ctx, patient),
+    })
+    await ctx.reply(msg)
     return
   }
 
@@ -92,14 +133,19 @@ export async function handleHistory(ctx: BotContext): Promise<void> {
     0,
   )
 
-  await ctx.reply(
-    `Session History\n`
-    + `Total sessions: ${sessions.length}\n`
-    + `Total messages: ${totalMessages}\n`
-    + `First session: ${first.startedAt.toISOString().split('T')[0]}\n`
-    + `Last session: ${last.startedAt.toISOString().split('T')[0]}\n`
-    + `Active: ${sessions.filter(s => s.status === 'active').length}\n`
-    + `Paused: ${sessions.filter(s => s.status === 'paused').length}\n`
-    + `Closed: ${sessions.filter(s => s.status === 'closed').length}`,
-  )
+  const msg = await generateMessage({
+    purpose: 'session_history',
+    context: {
+      totalSessions: sessions.length,
+      totalMessages,
+      firstSessionDate: first.startedAt.toISOString().split('T')[0],
+      lastSessionDate: last.startedAt.toISOString().split('T')[0],
+      activeSessions: sessions.filter(s => s.status === 'active').length,
+      pausedSessions: sessions.filter(s => s.status === 'paused').length,
+      closedSessions: sessions.filter(s => s.status === 'closed').length,
+    },
+    language: getLanguage(ctx, patient),
+  })
+
+  await ctx.reply(msg)
 }

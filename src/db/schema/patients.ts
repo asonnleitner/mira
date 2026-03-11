@@ -3,13 +3,13 @@ import * as z from 'zod'
 
 export const patientProfileSchema = z.object({
   fullName: z.string().optional(),
-  age: z.number().optional(),
+  dateOfBirth: z.string().optional(),
   gender: z.string().optional(),
   occupation: z.string().optional(),
   relationshipStatus: z.string().optional(),
   therapyGoals: z.array(z.string()).optional(),
   previousTherapyExperience: z.string().optional(),
-  preferredLanguage: z.enum(['en', 'cs']).optional(),
+  preferredLanguage: z.string().optional(),
   attachmentStyle: z.string().optional(),
   recurringThemes: z.array(z.object({
     theme: z.string(),
@@ -31,7 +31,7 @@ export const patients = pgTable('patients', {
   telegramId: bigint('telegram_id', { mode: 'number' }).notNull().unique(),
   firstName: varchar('first_name', { length: 256 }),
   username: varchar({ length: 256 }),
-  age: integer('age'),
+  dateOfBirth: varchar('date_of_birth', { length: 10 }),
   onboardingComplete: boolean('onboarding_complete').default(false).notNull(),
   profile: jsonb('profile').$type<PatientProfile>().default({}),
   createdAt: timestamp('created_at').defaultNow().notNull(),

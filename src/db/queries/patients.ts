@@ -46,7 +46,7 @@ export async function completeOnboarding(
     .set({
       onboardingComplete: true,
       firstName: profile.fullName,
-      age: profile.age,
+      dateOfBirth: profile.dateOfBirth,
       profile,
       updatedAt: new Date(),
     })

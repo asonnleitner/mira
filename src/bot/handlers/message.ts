@@ -1,5 +1,6 @@
 import type { SessionContext } from '~/agent/context-assembler'
 import type { BotContext } from '~/bot/context'
+import type { SessionType } from '~/db/schema'
 import { join } from 'node:path'
 import { extractArtifacts } from '~/agent/artifact-extractor'
 import { continueTherapySession, startTherapySession } from '~/agent/therapist'
@@ -10,13 +11,25 @@ import { createPatient, findPatientByTelegramId } from '~/db/queries/patients'
 import { createSession, findActiveSession, saveMessage, updateSessionLastMessage, updateSessionSdkId } from '~/db/queries/sessions'
 import { appendMessage, createTranscript } from '~/storage/transcript'
 
-// Debounce buffer for group chats (couples therapy)
-const groupBuffer = new Map<
-  number,
-  { timer: Timer, messages: Array<{ text: string, from: string, patientId?: number }> }
->()
+interface MessageEntry {
+  text: string
+  from: string
+  patientId?: number
+}
 
-const DEBOUNCE_MS = 20_000
+interface ChatBuffer {
+  timer: Timer
+  messages: MessageEntry[]
+  abortController?: AbortController
+  ctx: BotContext
+  chatMode: SessionType
+}
+
+// Unified buffer for both individual and couples chats
+const chatBuffer = new Map<number, ChatBuffer>()
+
+const INDIVIDUAL_DEBOUNCE_MS = 3_000
+const COUPLES_DEBOUNCE_MS = 20_000
 
 export async function handleMessage(ctx: BotContext): Promise<void> {
   const telegramId = ctx.from!.id
@@ -50,61 +63,80 @@ export async function handleMessage(ctx: BotContext): Promise<void> {
   ctx.session.patientId = patient.id
 
   const chatMode = detectChatMode(ctx)
-
-  if (chatMode === 'couples') {
-    // Buffer messages for group chat debounce
-    handleGroupMessage(ctx, chatId, text, patient.id, ctx.from!.first_name || 'Partner')
-    return
+  const messageEntry: MessageEntry = {
+    text,
+    from: ctx.from!.first_name || (chatMode === 'couples' ? 'Partner' : 'Patient'),
+    patientId: patient.id,
   }
 
-  // Individual DM — process immediately
-  await processTherapyMessage(ctx, chatId, chatMode, [
-    { text, from: ctx.from!.first_name || 'Patient', patientId: patient.id },
-  ])
+  bufferMessage(ctx, chatId, chatMode, messageEntry)
 }
 
-function handleGroupMessage(
+function bufferMessage(
   ctx: BotContext,
   chatId: number,
-  text: string,
-  patientId: number,
-  fromName: string,
+  chatMode: SessionType,
+  message: MessageEntry,
 ): void {
-  const existing = groupBuffer.get(chatId)
-
-  const messageEntry = { text, from: fromName, patientId }
+  const existing = chatBuffer.get(chatId)
 
   if (existing) {
+    // Cancel debounce timer
     clearTimeout(existing.timer)
-    existing.messages.push(messageEntry)
+
+    // Abort in-flight query if one is running
+    if (existing.abortController) {
+      existing.abortController.abort()
+      existing.abortController = undefined
+    }
+
+    existing.messages.push(message)
+    existing.ctx = ctx // Use latest ctx for reply
   }
   else {
-    groupBuffer.set(chatId, { timer: null as any, messages: [messageEntry] })
+    chatBuffer.set(chatId, {
+      timer: null as any,
+      messages: [message],
+      ctx,
+      chatMode,
+    })
   }
 
-  const buffer = groupBuffer.get(chatId)!
+  const buffer = chatBuffer.get(chatId)!
+  const debounceMs = chatMode === 'couples' ? COUPLES_DEBOUNCE_MS : INDIVIDUAL_DEBOUNCE_MS
 
   // Show typing indicator
   ctx.api.sendChatAction(chatId, 'typing').catch(() => {})
 
   buffer.timer = setTimeout(async () => {
+    const ac = new AbortController()
+    buffer.abortController = ac
     const messages = [...buffer.messages]
-    groupBuffer.delete(chatId)
+    buffer.messages = []
 
     try {
-      await processTherapyMessage(ctx, chatId, 'couples', messages)
+      await processTherapyMessage(buffer.ctx, chatId, chatMode, messages, ac.signal)
+      // Success — clean up buffer
+      chatBuffer.delete(chatId)
     }
     catch (err) {
-      console.error('Error processing group message:', err)
+      if (ac.signal.aborted) {
+        // Aborted — messages already re-buffered by the new incoming message
+        // The new message's debounce will re-trigger processing
+        return
+      }
+      console.error('Error processing therapy message:', err)
+      chatBuffer.delete(chatId)
     }
-  }, DEBOUNCE_MS)
+  }, debounceMs)
 }
 
 async function processTherapyMessage(
   ctx: BotContext,
   chatId: number,
-  chatMode: 'individual' | 'couples',
-  messages: Array<{ text: string, from: string, patientId?: number }>,
+  chatMode: SessionType,
+  messages: MessageEntry[],
+  signal: AbortSignal,
 ): Promise<void> {
   // Show typing indicator
   const typingInterval = setInterval(() => {
@@ -183,6 +215,10 @@ async function processTherapyMessage(
       })
     }
 
+    // Check abort before calling Claude (messages already saved)
+    if (signal.aborted)
+      throw new DOMException('Aborted', 'AbortError')
+
     // Build session context
     const profilePath = join(
       config.DATA_DIR,
@@ -203,6 +239,10 @@ async function processTherapyMessage(
       dataDir: config.DATA_DIR,
     }
 
+    // Create AbortController to pass to SDK
+    const sdkAbortController = new AbortController()
+    signal.addEventListener('abort', () => sdkAbortController.abort(), { once: true })
+
     // Call Claude
     let response: string
 
@@ -211,13 +251,18 @@ async function processTherapyMessage(
         sessionCtx,
         combinedMessage,
         session.sdkSessionId,
+        sdkAbortController,
       )
     }
     else {
-      const result = await startTherapySession(sessionCtx, combinedMessage)
+      const result = await startTherapySession(sessionCtx, combinedMessage, sdkAbortController)
       response = result.response
       await updateSessionSdkId(session.id, result.sdkSessionId)
     }
+
+    // Check abort after Claude returns (before sending response)
+    if (signal.aborted)
+      throw new DOMException('Aborted', 'AbortError')
 
     // Send response to Telegram
     // Split long messages (Telegram limit is 4096 chars)

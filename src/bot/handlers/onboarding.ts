@@ -1,40 +1,148 @@
 import type { BotContext } from '~/bot/context'
 import type { PatientProfile } from '~/db/schema'
 import { join } from 'node:path'
+import { createSdkMcpServer, query, tool } from '@anthropic-ai/claude-agent-sdk'
+import * as z from 'zod'
 import { config } from '~/config'
 import { completeOnboarding, createPatient, findPatientByTelegramId } from '~/db/queries/patients'
 import { writeProfile } from '~/storage/profile'
 
-// In-memory store for tracking onboarding state per user
-const onboardingState = new Map<
-  number,
-  { step: string, profile: Partial<PatientProfile> }
->()
+interface OnboardingSession {
+  sdkSessionId?: string
+}
 
-const STEPS = [
-  'name',
-  'age',
-  'gender',
-  'occupation',
-  'relationship_status',
-  'previous_therapy',
-  'goals',
-  'language',
-] as const
+const onboardingState = new Map<number, OnboardingSession>()
 
-type Step = (typeof STEPS)[number]
+const ONBOARDING_SYSTEM_PROMPT = `You are a warm, supportive AI therapy companion conducting an onboarding conversation with a new user on Telegram.
 
-const PROMPTS: Record<Step, string> = {
-  name: 'What should I call you?',
-  age: 'How old are you?',
-  gender: 'How do you identify? (or type "skip")',
-  occupation: 'What do you do for work? (or type "skip")',
-  relationship_status: 'What\'s your current relationship status?',
-  previous_therapy:
-    'Have you been to therapy before? If so, what was your experience like?',
-  goals: 'What are you hoping to get out of our sessions together?',
-  language:
-    'Would you prefer to communicate in English or Czech?\nPreferujete komunikaci v anglictine nebo cestine?',
+Your goal is to naturally collect the following information through conversation:
+- Their name (how they'd like to be called)
+- Date of birth (YYYY-MM-DD format)
+- Gender identity (optional — they can skip)
+- Occupation (optional — they can skip)
+- Relationship status
+- Previous therapy experience
+- Goals for therapy
+- Preferred language for communication
+
+Important guidelines:
+- Adapt to whatever language the user writes in. If they write in Czech, respond in Czech. If English, respond in English, etc.
+- Be conversational and warm — don't make it feel like a form.
+- You can collect multiple pieces of information from a single message if the user volunteers them.
+- If the user says "skip" or declines to answer an optional question, move on gracefully.
+- When you have gathered enough information, call the complete_onboarding tool with the collected data.
+- For date of birth, if the user gives just an age or a partial date, try to work with what they give. If they only give an age, estimate a date of birth from it (use the current year minus their age, January 1st).
+- Start by greeting them warmly and asking for their name.`
+
+function createOnboardingTools(telegramId: number, ctx: BotContext) {
+  let resolveCompletion: ((profile: PatientProfile) => void) | null = null
+  const completionPromise = new Promise<PatientProfile>((resolve) => {
+    resolveCompletion = resolve
+  })
+
+  const server = createSdkMcpServer({
+    name: 'onboarding-tools',
+    version: '1.0.0',
+    tools: [
+      tool(
+        'complete_onboarding',
+        'Call this when you have gathered enough profile information from the user to complete their onboarding.',
+        {
+          fullName: z.string().describe('The name the user wants to be called'),
+          dateOfBirth: z.string().optional().describe('Date of birth in YYYY-MM-DD format'),
+          gender: z.string().optional().describe('Gender identity'),
+          occupation: z.string().optional().describe('Their occupation'),
+          relationshipStatus: z.string().optional().describe('Current relationship status'),
+          previousTherapyExperience: z.string().optional().describe('Previous therapy experience'),
+          therapyGoals: z.array(z.string()).optional().describe('Goals for therapy'),
+          preferredLanguage: z.string().optional().describe('Preferred language code, e.g. "en", "cs", "de"'),
+        },
+        async (args) => {
+          const profile: PatientProfile = {
+            fullName: args.fullName,
+            dateOfBirth: args.dateOfBirth,
+            gender: args.gender,
+            occupation: args.occupation,
+            relationshipStatus: args.relationshipStatus,
+            previousTherapyExperience: args.previousTherapyExperience,
+            therapyGoals: args.therapyGoals,
+            preferredLanguage: args.preferredLanguage,
+          }
+
+          // Persist to DB
+          const patient = await completeOnboarding(telegramId, profile)
+          if (patient) {
+            ctx.session.patientId = patient.id
+          }
+
+          // Write PROFILE.md
+          const profilePath = join(
+            config.DATA_DIR,
+            'patients',
+            String(telegramId),
+            'PROFILE.md',
+          )
+          await writeProfile(profilePath, telegramId, profile)
+
+          onboardingState.delete(telegramId)
+          resolveCompletion?.(profile)
+
+          return {
+            content: [{ type: 'text' as const, text: 'Onboarding complete. Now send a warm message to the user acknowledging their profile is set up and that they can start their first session by writing anything.' }],
+          }
+        },
+        { annotations: { readOnlyHint: false } },
+      ),
+    ],
+  })
+
+  return { server, completionPromise }
+}
+
+async function runOnboardingAgent(
+  telegramId: number,
+  userMessage: string,
+  ctx: BotContext,
+  sdkSessionId?: string,
+): Promise<string> {
+  const { server } = createOnboardingTools(telegramId, ctx)
+  const languageCode = ctx.from?.language_code
+
+  const languageHint = languageCode
+    ? `\nThe user's Telegram language is set to "${languageCode}". Consider starting in this language unless they write in a different one.`
+    : ''
+
+  let response = ''
+  let newSdkSessionId = ''
+
+  const options: Parameters<typeof query>[0]['options'] = {
+    systemPrompt: ONBOARDING_SYSTEM_PROMPT + languageHint,
+    model: 'claude-haiku-4-5-20251001',
+    mcpServers: { 'onboarding-tools': server },
+    allowedTools: ['mcp__onboarding-tools__complete_onboarding'],
+    tools: [],
+    maxTurns: 3,
+    maxBudgetUsd: 0.02,
+    persistSession: true,
+    ...(sdkSessionId ? { resume: sdkSessionId } : {}),
+  }
+
+  const q = query({ prompt: userMessage, options })
+
+  for await (const message of q) {
+    if (message.type === 'result' && message.subtype === 'success') {
+      response = message.result
+      newSdkSessionId = message.session_id
+    }
+  }
+
+  // Update stored SDK session ID
+  const state = onboardingState.get(telegramId)
+  if (state) {
+    state.sdkSessionId = newSdkSessionId
+  }
+
+  return response
 }
 
 export async function startOnboarding(ctx: BotContext): Promise<void> {
@@ -52,21 +160,25 @@ export async function startOnboarding(ctx: BotContext): Promise<void> {
 
   ctx.session.patientId = patient.id
 
-  onboardingState.set(telegramId, { step: 'name', profile: {} })
+  // Reset onboarding state (handles /start mid-onboarding)
+  onboardingState.set(telegramId, {})
 
-  await ctx.reply(
-    `Welcome! I'm your AI therapy companion. Before we begin, I'd like to learn a bit about you. Everything you share stays private and helps me provide better support.\n\n${
-      PROMPTS.name}`,
+  const response = await runOnboardingAgent(
+    telegramId,
+    'The user just started the bot. Greet them and begin onboarding.',
+    ctx,
   )
+
+  if (response) {
+    await ctx.reply(response)
+  }
 }
 
 export function isOnboarding(telegramId: number): boolean {
   return onboardingState.has(telegramId)
 }
 
-export async function handleOnboardingMessage(
-  ctx: BotContext,
-): Promise<void> {
+export async function handleOnboardingMessage(ctx: BotContext): Promise<void> {
   const telegramId = ctx.from!.id
   const state = onboardingState.get(telegramId)
   if (!state)
@@ -76,92 +188,14 @@ export async function handleOnboardingMessage(
   if (!text)
     return
 
-  const currentStep = state.step as Step
-  const profile = state.profile
-  const skip = text.toLowerCase() === 'skip'
+  const response = await runOnboardingAgent(
+    telegramId,
+    text,
+    ctx,
+    state.sdkSessionId,
+  )
 
-  // Process current step
-  switch (currentStep) {
-    case 'name':
-      profile.fullName = text
-      break
-    case 'age': {
-      const age = Number.parseInt(text, 10)
-      if (Number.isNaN(age) || age < 1 || age > 120) {
-        await ctx.reply('Please enter a valid age (number).')
-        return
-      }
-      profile.age = age
-      break
-    }
-    case 'gender':
-      if (!skip)
-        profile.gender = text
-      break
-    case 'occupation':
-      if (!skip)
-        profile.occupation = text
-      break
-    case 'relationship_status':
-      profile.relationshipStatus = text
-      break
-    case 'previous_therapy':
-      profile.previousTherapyExperience = text
-      break
-    case 'goals':
-      profile.therapyGoals = text.split(/[,;\n]/).map(g => g.trim()).filter(Boolean)
-      break
-    case 'language': {
-      const lower = text.toLowerCase()
-      if (
-        lower.includes('czech')
-        || lower.includes('ces')
-        || lower.includes('cs')
-      ) {
-        profile.preferredLanguage = 'cs'
-      }
-      else {
-        profile.preferredLanguage = 'en'
-      }
-      break
-    }
-  }
-
-  // Move to next step
-  const currentIdx = STEPS.indexOf(currentStep)
-  const nextIdx = currentIdx + 1
-
-  if (nextIdx < STEPS.length) {
-    const nextStep = STEPS[nextIdx]
-    state.step = nextStep
-    await ctx.reply(PROMPTS[nextStep])
-  }
-  else {
-    // Onboarding complete
-    onboardingState.delete(telegramId)
-
-    const fullProfile = profile as PatientProfile
-    const patient = await completeOnboarding(telegramId, fullProfile)
-
-    if (patient) {
-      ctx.session.patientId = patient.id
-    }
-
-    // Write PROFILE.md
-    const profilePath = join(
-      config.DATA_DIR,
-      'patients',
-      String(telegramId),
-      'PROFILE.md',
-    )
-    await writeProfile(profilePath, telegramId, fullProfile)
-
-    const lang = fullProfile.preferredLanguage
-    const msg
-      = lang === 'cs'
-        ? `Dekuji, ${fullProfile.fullName}! Vas profil je nastaven. Muzete zacit psat kdykoliv a ja tu pro vas budu. Nase sezeni zacina nyni.`
-        : `Thank you, ${fullProfile.fullName}! Your profile is set up. You can start writing anytime and I'll be here for you. Our session starts now.`
-
-    await ctx.reply(msg)
+  if (response) {
+    await ctx.reply(response)
   }
 }

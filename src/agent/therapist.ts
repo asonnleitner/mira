@@ -14,6 +14,7 @@ const ALLOWED_TOOLS = [
 export async function startTherapySession(
   sessionCtx: SessionContext,
   patientMessage: string,
+  abortController?: AbortController,
 ): Promise<{ response: string, sdkSessionId: string }> {
   const toolCtx: ToolContext = {
     sessionId: sessionCtx.sessionId,
@@ -41,6 +42,7 @@ export async function startTherapySession(
       maxBudgetUsd: 0.5,
       cwd: sessionCtx.dataDir,
       persistSession: true,
+      abortController,
     },
   })
 
@@ -58,6 +60,7 @@ export async function continueTherapySession(
   sessionCtx: SessionContext,
   patientMessage: string,
   sdkSessionId: string,
+  abortController?: AbortController,
 ): Promise<string> {
   const toolCtx: ToolContext = {
     sessionId: sessionCtx.sessionId,
@@ -83,6 +86,7 @@ export async function continueTherapySession(
       tools: [],
       maxTurns: 3,
       maxBudgetUsd: 0.5,
+      abortController,
     },
   })
 
