@@ -1,7 +1,7 @@
 import { bigint, boolean, integer, jsonb, pgTable, timestamp, varchar } from 'drizzle-orm/pg-core'
 import * as z from 'zod'
 
-export const patientProfileSchema = z.object({
+export const PatientProfileSchema = z.object({
   fullName: z.string().optional(),
   dateOfBirth: z.string().optional(),
   gender: z.string().optional(),
@@ -24,7 +24,7 @@ export const patientProfileSchema = z.object({
   })).optional(),
 })
 
-export type PatientProfile = z.infer<typeof patientProfileSchema>
+export type PatientProfile = z.infer<typeof PatientProfileSchema>
 
 export const patients = pgTable('patients', {
   id: integer().primaryKey().generatedAlwaysAsIdentity(),

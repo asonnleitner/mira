@@ -1,3 +1,4 @@
+import type { Options } from '@anthropic-ai/claude-agent-sdk'
 import type { BotContext } from '~/bot/context'
 import type { PatientProfile } from '~/db/schema'
 import { join } from 'node:path'
@@ -5,6 +6,7 @@ import { createSdkMcpServer, query, tool } from '@anthropic-ai/claude-agent-sdk'
 import * as z from 'zod'
 import { config } from '~/config'
 import { completeOnboarding, createPatient, findPatientByTelegramId } from '~/db/queries/patients'
+import { PatientProfileSchema } from '~/db/schema/patients'
 import { writeProfile } from '~/storage/profile'
 
 interface OnboardingSession {
@@ -34,8 +36,9 @@ Important guidelines:
 - For date of birth, if the user gives just an age or a partial date, try to work with what they give. If they only give an age, estimate a date of birth from it (use the current year minus their age, January 1st).
 - Start by greeting them warmly and asking for their name.`
 
-function createOnboardingTools(telegramId: number, ctx: BotContext) {
+function createOnboardingTools(ctx: BotContext, telegramId: number) {
   let resolveCompletion: ((profile: PatientProfile) => void) | null = null
+
   const completionPromise = new Promise<PatientProfile>((resolve) => {
     resolveCompletion = resolve
   })
@@ -58,7 +61,7 @@ function createOnboardingTools(telegramId: number, ctx: BotContext) {
           preferredLanguage: z.string().optional().describe('Preferred language code, e.g. "en", "cs", "de"'),
         },
         async (args) => {
-          const profile: PatientProfile = {
+          const profile = PatientProfileSchema.parse({
             fullName: args.fullName,
             dateOfBirth: args.dateOfBirth,
             gender: args.gender,
@@ -67,28 +70,28 @@ function createOnboardingTools(telegramId: number, ctx: BotContext) {
             previousTherapyExperience: args.previousTherapyExperience,
             therapyGoals: args.therapyGoals,
             preferredLanguage: args.preferredLanguage,
-          }
+          })
 
           // Persist to DB
           const patient = await completeOnboarding(telegramId, profile)
+
           if (patient) {
             ctx.session.patientId = patient.id
           }
 
           // Write PROFILE.md
-          const profilePath = join(
-            config.DATA_DIR,
-            'patients',
-            String(telegramId),
-            'PROFILE.md',
-          )
+          const profilePath = join(config.DATA_DIR, 'patients', telegramId.toString(), 'PROFILE.md')
+
           await writeProfile(profilePath, telegramId, profile)
 
           onboardingState.delete(telegramId)
           resolveCompletion?.(profile)
 
           return {
-            content: [{ type: 'text' as const, text: 'Onboarding complete. Now send a warm message to the user acknowledging their profile is set up and that they can start their first session by writing anything.' }],
+            content: [{
+              type: 'text' as const,
+              text: 'Onboarding complete. Now send a warm message to the user acknowledging their profile is set up and that they can start their first session by writing anything.',
+            }],
           }
         },
         { annotations: { readOnlyHint: false } },
@@ -99,13 +102,8 @@ function createOnboardingTools(telegramId: number, ctx: BotContext) {
   return { server, completionPromise }
 }
 
-async function runOnboardingAgent(
-  telegramId: number,
-  userMessage: string,
-  ctx: BotContext,
-  sdkSessionId?: string,
-): Promise<string> {
-  const { server } = createOnboardingTools(telegramId, ctx)
+async function runOnboardingAgent(ctx: BotContext, telegramId: number, userMessage: string, sdkSessionId?: string): Promise<string> {
+  const { server } = createOnboardingTools(ctx, telegramId)
   const languageCode = ctx.from?.language_code
 
   const languageHint = languageCode
@@ -115,7 +113,7 @@ async function runOnboardingAgent(
   let response = ''
   let newSdkSessionId = ''
 
-  const options: Parameters<typeof query>[0]['options'] = {
+  const options: Options = {
     systemPrompt: ONBOARDING_SYSTEM_PROMPT + languageHint,
     model: 'claude-haiku-4-5-20251001',
     mcpServers: { 'onboarding-tools': server },
@@ -138,6 +136,7 @@ async function runOnboardingAgent(
 
   // Update stored SDK session ID
   const state = onboardingState.get(telegramId)
+
   if (state) {
     state.sdkSessionId = newSdkSessionId
   }
@@ -150,6 +149,7 @@ export async function startOnboarding(ctx: BotContext): Promise<void> {
 
   // Ensure patient record exists
   let patient = await findPatientByTelegramId(telegramId)
+
   if (!patient) {
     patient = await createPatient({
       telegramId,
@@ -164,9 +164,9 @@ export async function startOnboarding(ctx: BotContext): Promise<void> {
   onboardingState.set(telegramId, {})
 
   const response = await runOnboardingAgent(
+    ctx,
     telegramId,
     'The user just started the bot. Greet them and begin onboarding.',
-    ctx,
   )
 
   if (response) {
@@ -181,19 +181,16 @@ export function isOnboarding(telegramId: number): boolean {
 export async function handleOnboardingMessage(ctx: BotContext): Promise<void> {
   const telegramId = ctx.from!.id
   const state = onboardingState.get(telegramId)
+
   if (!state)
     return
 
   const text = ctx.message?.text?.trim()
+
   if (!text)
     return
 
-  const response = await runOnboardingAgent(
-    telegramId,
-    text,
-    ctx,
-    state.sdkSessionId,
-  )
+  const response = await runOnboardingAgent(ctx, telegramId, text, state.sdkSessionId)
 
   if (response) {
     await ctx.reply(response)

@@ -47,6 +47,7 @@ export async function handleMessage(ctx: BotContext): Promise<void> {
 
   // Ensure patient exists
   let patient = await findPatientByTelegramId(telegramId)
+
   if (!patient) {
     patient = await createPatient({
       telegramId,
@@ -63,6 +64,7 @@ export async function handleMessage(ctx: BotContext): Promise<void> {
   ctx.session.patientId = patient.id
 
   const chatMode = detectChatMode(ctx)
+
   const messageEntry: MessageEntry = {
     text,
     from: ctx.from!.first_name || (chatMode === 'couples' ? 'Partner' : 'Patient'),
@@ -72,12 +74,7 @@ export async function handleMessage(ctx: BotContext): Promise<void> {
   bufferMessage(ctx, chatId, chatMode, messageEntry)
 }
 
-function bufferMessage(
-  ctx: BotContext,
-  chatId: number,
-  chatMode: SessionType,
-  message: MessageEntry,
-): void {
+function bufferMessage(ctx: BotContext, chatId: number, chatMode: SessionType, message: MessageEntry): void {
   const existing = chatBuffer.get(chatId)
 
   if (existing) {
