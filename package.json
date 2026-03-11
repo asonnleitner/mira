@@ -1,0 +1,19 @@
+{
+  "type": "module",
+  "scripts": {
+    "build": "nitro build",
+    "dev": "nitro dev",
+    "preview": "npx srvx --prod .output/"
+  },
+  "devDependencies": {
+    "drizzle-kit": "^1.0.0-beta.16-ea816b6",
+    "nitro": "latest",
+    "rolldown": "latest"
+  },
+  "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "^0.2.72",
+    "drizzle-orm": "^1.0.0-beta.16-ea816b6",
+    "grammy": "^1.41.1",
+    "zod": "^4.3.6"
+  }
+}
