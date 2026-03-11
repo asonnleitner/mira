@@ -7,14 +7,29 @@ x-logging: &default-logging
 services:
   bot:
     build: .
-    command: [bun, --watch, run, src/index.ts]
+    command: [bun, --bun, --watch, run, src/index.ts]
     env_file: .env
+    environment:
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318
     volumes:
       - ./src:/app/src
       - ./data:/app/data
     depends_on:
       postgres:
         condition: service_healthy
+      jaeger:
+        condition: service_started
+    restart: unless-stopped
+
+  jaeger:
+    image: jaegertracing/jaeger:latest
+    ports:
+      - '16686:16686'
+    expose:
+      - '4318'
+    environment:
+      COLLECTOR_OTLP_ENABLED: 'true'
+    logging: *default-logging
     restart: unless-stopped
 
   postgres:

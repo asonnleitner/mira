@@ -1,10 +1,24 @@
+import { OTLPTraceExporter } from '@opentelemetry/exporter-trace-otlp-proto'
 import { resourceFromAttributes } from '@opentelemetry/resources'
 import { NodeSDK } from '@opentelemetry/sdk-node'
-import { ConsoleSpanExporter, SimpleSpanProcessor } from '@opentelemetry/sdk-trace-node'
+import { BatchSpanProcessor, ConsoleSpanExporter, SimpleSpanProcessor } from '@opentelemetry/sdk-trace-node'
 import { ATTR_SERVICE_NAME, ATTR_SERVICE_VERSION } from '@opentelemetry/semantic-conventions'
 import { config } from '~/config'
+import { logger } from '~/telemetry/logger'
 
-const sdk = new NodeSDK({
+const endpoint = config.OTEL_EXPORTER_OTLP_ENDPOINT
+
+const spanProcessor = endpoint
+  ? (() => {
+      logger.info(`OTLP trace exporter configured: ${endpoint}`)
+      return new BatchSpanProcessor(new OTLPTraceExporter({ url: `${endpoint}/v1/traces` }))
+    })()
+  : (() => {
+      logger.info('No OTLP endpoint configured, using console span exporter')
+      return new SimpleSpanProcessor(new ConsoleSpanExporter())
+    })()
+
+export const sdk = new NodeSDK({
   resource: resourceFromAttributes({
     [ATTR_SERVICE_NAME]: config.OTEL_SERVICE_NAME,
     [ATTR_SERVICE_VERSION]: config.OTEL_SERVICE_VERSION,
@@ -12,7 +26,7 @@ const sdk = new NodeSDK({
     'telemetry.sdk.language': 'javascript',
     'telemetry.sdk.runtime': 'bun',
   }),
-  spanProcessors: [new SimpleSpanProcessor(new ConsoleSpanExporter())],
+  spanProcessors: [spanProcessor],
 })
 
 sdk.start()

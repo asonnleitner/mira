@@ -5,6 +5,7 @@ import { query } from '@anthropic-ai/claude-agent-sdk'
 import { assembleSystemPrompt } from '~/agent/context-assembler'
 import { createTherapyTools } from '~/agent/tools'
 import { MODELS } from '~/constants'
+import { logger } from '~/telemetry/logger'
 import { setGenAiContext, setGenAiResult, withGenAiSpan } from '~/telemetry/tracing'
 
 const ALLOWED_TOOLS = [
@@ -59,8 +60,8 @@ export async function startTherapySession(
         cwd: sessionCtx.dataDir,
         persistSession: true,
         abortController,
-        permissionMode: 'bypassPermissions',
-        allowDangerouslySkipPermissions: true,
+        permissionMode: 'acceptEdits',
+        stderr: (data: string) => logger.debug(data),
       },
     })
 
@@ -133,8 +134,8 @@ export async function continueTherapySession(
         maxTurns: 3,
         maxBudgetUsd: 0.5,
         abortController,
-        permissionMode: 'bypassPermissions',
-        allowDangerouslySkipPermissions: true,
+        permissionMode: 'acceptEdits',
+        stderr: (data: string) => logger.debug(data),
       },
     })
 

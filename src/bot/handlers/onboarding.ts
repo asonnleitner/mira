@@ -138,8 +138,7 @@ async function runOnboardingAgent(ctx: BotContext, telegramId: number, userMessa
       maxTurns: 3,
       maxBudgetUsd: 0.02,
       persistSession: true,
-      permissionMode: 'bypassPermissions',
-      allowDangerouslySkipPermissions: true,
+      permissionMode: 'acceptEdits',
       ...(sdkSessionId ? { resume: sdkSessionId } : {}),
     }
 

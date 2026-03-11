@@ -1,4 +1,4 @@
-import '~/telemetry/config'
+import { sdk } from '~/telemetry/config'
 /* eslint-disable perfectionist/sort-imports */
 import process from 'node:process'
 import { logger } from '~/telemetry/logger'
@@ -30,6 +30,7 @@ async function shutdown() {
     logger.error('Error during shutdown:', err)
   }
   finally {
+    await sdk.shutdown()
     process.exit(0)
   }
 }

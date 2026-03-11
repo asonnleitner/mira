@@ -46,8 +46,7 @@ export async function generateMessage(opts: {
           maxTurns: 1,
           maxBudgetUsd: 0.005,
           tools: [],
-          permissionMode: 'bypassPermissions',
-          allowDangerouslySkipPermissions: true,
+          permissionMode: 'acceptEdits',
         },
       })
 

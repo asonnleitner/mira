@@ -77,8 +77,7 @@ Also identify any profile updates needed and whether a SOAP note should be gener
           maxTurns: 1,
           maxBudgetUsd: 0.02,
           persistSession: false,
-          permissionMode: 'bypassPermissions',
-          allowDangerouslySkipPermissions: true,
+          permissionMode: 'acceptEdits',
           outputFormat: {
             type: 'json_schema',
             schema: z.toJSONSchema(ArtifactSchema),
@@ -220,8 +219,7 @@ Provide a structured SOAP note based on the therapy session.`
           maxTurns: 1,
           maxBudgetUsd: 0.02,
           persistSession: false,
-          permissionMode: 'bypassPermissions',
-          allowDangerouslySkipPermissions: true,
+          permissionMode: 'acceptEdits',
           outputFormat: {
             type: 'json_schema',
             schema: z.toJSONSchema(soapSchema),
