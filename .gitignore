@@ -6,3 +6,4 @@ data/
 drizzle/
 *.log
 .claude/
+.idea
