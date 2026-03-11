@@ -58,7 +58,7 @@ ${therapistResponse}
 Extract any clinically significant artifacts (disclosures, insights, emotions, patterns, etc.).
 Also identify any profile updates needed and whether a SOAP note should be generated (only if this feels like a natural session ending point).`
 
-      const systemPrompt = 'You are a clinical note-taking assistant. Extract therapy artifacts from the exchange. Be precise and clinical. Only extract genuinely significant items — not every message warrants artifacts.'
+      const systemPrompt = 'You are a clinical note-taking assistant. Extract therapy artifacts from the exchange. Be precise and clinical. Only extract genuinely significant items. Not every message warrants artifacts.'
 
       setGenAiContext(span, {
         systemPrompt,
@@ -130,18 +130,15 @@ Also identify any profile updates needed and whether a SOAP note should be gener
 
       // Apply profile updates
       const updates = data.profileUpdates
-      if (
-        updates.newThemes?.length
-        || updates.newTriggers?.length
-        || updates.progressNote
-      ) {
+      if (updates.newThemes?.length || updates.newTriggers?.length || updates.progressNote) {
         const patient = await updatePatientProfile(ctx.telegramId, {})
+
         if (patient) {
-          const profile: PatientProfile
-            = (patient.profile as PatientProfile) ?? {}
+          const profile: PatientProfile = (patient.profile as PatientProfile) ?? {}
 
           if (updates.newThemes?.length) {
             const themes = profile.recurringThemes ?? []
+
             for (const theme of updates.newThemes) {
               const existing = themes.find(t => t.theme === theme)
               if (existing) {
@@ -156,7 +153,8 @@ Also identify any profile updates needed and whether a SOAP note should be gener
 
           if (updates.newTriggers?.length) {
             const existing = new Set(profile.triggers ?? [])
-            for (const t of updates.newTriggers) existing.add(t)
+            for (const t of updates.newTriggers)
+              existing.add(t)
             profile.triggers = [...existing]
           }
 

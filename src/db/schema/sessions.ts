@@ -1,4 +1,5 @@
-import { bigint, index, integer, pgEnum, pgTable, timestamp, varchar } from 'drizzle-orm/pg-core'
+import { sql } from 'drizzle-orm'
+import { index, integer, sqliteTable, text } from 'drizzle-orm/sqlite-core'
 
 export const sessionTypeValues = ['individual', 'couples'] as const
 export type SessionType = (typeof sessionTypeValues)[number]
@@ -6,20 +7,17 @@ export type SessionType = (typeof sessionTypeValues)[number]
 export const sessionStatusValues = ['active', 'paused', 'closed'] as const
 export type SessionStatus = (typeof sessionStatusValues)[number]
 
-export const sessionTypeEnum = pgEnum('session_type', sessionTypeValues)
-export const sessionStatusEnum = pgEnum('session_status', sessionStatusValues)
-
-export const therapySessions = pgTable('therapy_sessions', {
-  id: integer().primaryKey().generatedAlwaysAsIdentity(),
-  chatId: bigint('chat_id', { mode: 'number' }).notNull(),
-  sdkSessionId: varchar('sdk_session_id', { length: 256 }),
-  type: sessionTypeEnum().notNull(),
-  status: sessionStatusEnum().default('active').notNull(),
-  startedAt: timestamp('started_at').defaultNow().notNull(),
-  lastMessageAt: timestamp('last_message_at').defaultNow().notNull(),
+export const therapySessions = sqliteTable('therapy_sessions', {
+  id: integer().primaryKey({ autoIncrement: true }),
+  chatId: integer('chat_id').notNull(),
+  sdkSessionId: text('sdk_session_id', { length: 256 }),
+  type: text({ enum: sessionTypeValues }).notNull(),
+  status: text({ enum: sessionStatusValues }).default('active').notNull(),
+  startedAt: integer('started_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
+  lastMessageAt: integer('last_message_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
   messageCount: integer('message_count').default(0).notNull(),
-  transcriptPath: varchar('transcript_path', { length: 512 }).notNull(),
-  soapNotePath: varchar('soap_note_path', { length: 512 }),
+  transcriptPath: text('transcript_path', { length: 512 }).notNull(),
+  soapNotePath: text('soap_note_path', { length: 512 }),
 }, table => [
   index('sessions_chat_id_idx').on(table.chatId),
   index('sessions_status_idx').on(table.status),

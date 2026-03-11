@@ -11,18 +11,18 @@ export async function writeSoapNote(
   await mkdir(dirname(filePath), { recursive: true })
 
   const sections = [
-    `# SOAP Note — Session #${sessionId} — ${date}`,
+    `# SOAP Note: Session #${sessionId} | ${date}`,
     '',
-    '## S — Subjective',
+    '## S: Subjective',
     ...note.subjective.map(s => `- ${s}`),
     '',
-    '## O — Objective',
+    '## O: Objective',
     ...note.objective.map(s => `- ${s}`),
     '',
-    '## A — Assessment',
+    '## A: Assessment',
     ...note.assessment.map(s => `- ${s}`),
     '',
-    '## P — Plan',
+    '## P: Plan',
     ...note.plan.map(s => `- ${s}`),
     '',
   ]

@@ -1,6 +1,6 @@
-import { jsonb, pgTable, text } from 'drizzle-orm/pg-core'
+import { sqliteTable, text } from 'drizzle-orm/sqlite-core'
 
-export const grammySessions = pgTable('grammy_sessions', {
+export const grammySessions = sqliteTable('grammy_sessions', {
   key: text().primaryKey(),
-  value: jsonb().notNull(),
+  value: text({ mode: 'json' }).notNull(),
 })

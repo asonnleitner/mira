@@ -76,7 +76,7 @@ export async function startTherapySession(
 
     for await (const message of q) {
       if (message.type === 'system' && message.subtype === 'init') {
-        const failedServers = message.mcp_servers.filter(s => s.status !== 'connected')
+        const failedServers = message.mcp_servers.filter(s => s.status !== 'connected' && s.name === 'therapy-tools')
         if (failedServers.length > 0) {
           logger.error('[therapist] MCP servers failed to connect:', failedServers)
         }
@@ -166,7 +166,7 @@ export async function continueTherapySession(
 
     for await (const message of q) {
       if (message.type === 'system' && message.subtype === 'init') {
-        const failedServers = message.mcp_servers.filter(s => s.status !== 'connected')
+        const failedServers = message.mcp_servers.filter(s => s.status !== 'connected' && s.name === 'therapy-tools')
         if (failedServers.length > 0) {
           logger.error('[therapist] MCP servers failed to connect:', failedServers)
         }

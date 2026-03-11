@@ -5,8 +5,8 @@ import { findPatientByTelegramId } from '~/db/queries/patients'
 import { findActiveSession, getSessionCount, updateSessionStatus } from '~/db/queries/sessions'
 import { withSpan } from '~/telemetry/tracing'
 
-function getLanguage(ctx: BotContext, patient?: { profile?: { preferredLanguage?: string } | null } | null): string {
-  return patient?.profile?.preferredLanguage ?? ctx.from?.language_code ?? 'auto'
+function getLanguage(ctx: BotContext, patient?: { preferredLanguage?: string | null, profile?: { preferredLanguage?: string } | null } | null): string {
+  return patient?.preferredLanguage ?? patient?.profile?.preferredLanguage ?? ctx.from?.language_code ?? 'auto'
 }
 
 export async function handleStart(ctx: BotContext): Promise<void> {
@@ -27,7 +27,7 @@ export async function handleStart(ctx: BotContext): Promise<void> {
       language: getLanguage(ctx, patient),
     })
 
-    await ctx.reply(msg)
+    await ctx.reply(msg, { parse_mode: 'MarkdownV2' })
   })
 }
 
@@ -42,7 +42,7 @@ export async function handleStatus(ctx: BotContext): Promise<void> {
         purpose: 'no_active_session',
         language: getLanguage(ctx, patient),
       })
-      await ctx.reply(msg)
+      await ctx.reply(msg, { parse_mode: 'MarkdownV2' })
       return
     }
 
@@ -62,7 +62,7 @@ export async function handleStatus(ctx: BotContext): Promise<void> {
       language: getLanguage(ctx, patient),
     })
 
-    await ctx.reply(msg)
+    await ctx.reply(msg, { parse_mode: 'MarkdownV2' })
   })
 }
 
@@ -78,7 +78,7 @@ export async function handlePause(ctx: BotContext): Promise<void> {
         context: { action: 'pause' },
         language: getLanguage(ctx, patient),
       })
-      await ctx.reply(msg)
+      await ctx.reply(msg, { parse_mode: 'MarkdownV2' })
       return
     }
 
@@ -89,7 +89,7 @@ export async function handlePause(ctx: BotContext): Promise<void> {
       language: getLanguage(ctx, patient),
     })
 
-    await ctx.reply(msg)
+    await ctx.reply(msg, { parse_mode: 'MarkdownV2' })
   })
 }
 
@@ -105,7 +105,7 @@ export async function handleResume(ctx: BotContext): Promise<void> {
         purpose: 'no_paused_session',
         language: getLanguage(ctx, patient),
       })
-      await ctx.reply(msg)
+      await ctx.reply(msg, { parse_mode: 'MarkdownV2' })
       return
     }
 
@@ -117,7 +117,7 @@ export async function handleResume(ctx: BotContext): Promise<void> {
       language: getLanguage(ctx, patient),
     })
 
-    await ctx.reply(msg)
+    await ctx.reply(msg, { parse_mode: 'MarkdownV2' })
   })
 }
 
@@ -132,7 +132,7 @@ export async function handleHistory(ctx: BotContext): Promise<void> {
         purpose: 'no_history',
         language: getLanguage(ctx, patient),
       })
-      await ctx.reply(msg)
+      await ctx.reply(msg, { parse_mode: 'MarkdownV2' })
       return
     }
 
@@ -157,6 +157,6 @@ export async function handleHistory(ctx: BotContext): Promise<void> {
       language: getLanguage(ctx, patient),
     })
 
-    await ctx.reply(msg)
+    await ctx.reply(msg, { parse_mode: 'MarkdownV2' })
   })
 }

@@ -1,7 +1,7 @@
 import { mkdir } from 'node:fs/promises'
 import { dirname } from 'node:path'
 
-const MESSAGE_HEADER_RE = /(?=\n## \d{2}:\d{2}:\d{2} — )/
+const MESSAGE_HEADER_RE = /(?=\n## \d{2}:\d{2}:\d{2} [—|] )/
 
 function formatTime(date: Date): string {
   return date.toISOString().slice(11, 19) // HH:MM:SS
@@ -19,7 +19,7 @@ export async function createTranscript(
   await mkdir(dirname(filePath), { recursive: true })
 
   const dateStr = metadata.startedAt.toISOString().split('T')[0]
-  const content = `# Therapy Session — ${dateStr}
+  const content = `# Therapy Session | ${dateStr}
 
 **Type:** ${metadata.type === 'individual' ? 'Individual' : 'Couples'}
 **Patient:** ${metadata.patient}
@@ -40,7 +40,7 @@ export async function appendMessage(
 ): Promise<void> {
   const time = formatTime(timestamp)
   const label = patientLabel ? `${role} (${patientLabel})` : role
-  const block = `\n## ${time} — ${label}\n${content}\n`
+  const block = `\n## ${time} | ${label}\n${content}\n`
   await Bun.write(filePath, (await readTranscript(filePath)) + block)
 }
 

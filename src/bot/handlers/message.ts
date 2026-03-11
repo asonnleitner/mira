@@ -21,7 +21,6 @@ interface MessageEntry {
 }
 
 interface ChatBuffer {
-  timer: Timer
   messages: MessageEntry[]
   spanContexts: SpanContext[]
   abortController?: AbortController
@@ -31,9 +30,6 @@ interface ChatBuffer {
 
 // Unified buffer for both individual and couples chats
 const chatBuffer = new Map<number, ChatBuffer>()
-
-const INDIVIDUAL_DEBOUNCE_MS = 3_000
-const COUPLES_DEBOUNCE_MS = 20_000
 
 export async function handleMessage(ctx: BotContext): Promise<void> {
   const telegramId = ctx.from!.id
@@ -83,10 +79,7 @@ function bufferMessage(ctx: BotContext, chatId: number, chatMode: SessionType, m
   const existing = chatBuffer.get(chatId)
 
   if (existing) {
-    // Cancel debounce timer
-    clearTimeout(existing.timer)
-
-    // Abort in-flight query if one is running
+    // Abort in-flight request if one is running
     if (existing.abortController) {
       existing.abortController.abort()
       existing.abortController = undefined
@@ -99,7 +92,6 @@ function bufferMessage(ctx: BotContext, chatId: number, chatMode: SessionType, m
   }
   else {
     chatBuffer.set(chatId, {
-      timer: null as any,
       messages: [message],
       spanContexts: spanContext ? [spanContext] : [],
       ctx,
@@ -108,19 +100,19 @@ function bufferMessage(ctx: BotContext, chatId: number, chatMode: SessionType, m
   }
 
   const buffer = chatBuffer.get(chatId)!
-  const debounceMs = chatMode === 'couples' ? COUPLES_DEBOUNCE_MS : INDIVIDUAL_DEBOUNCE_MS
 
   // Show typing indicator
   ctx.api.sendChatAction(chatId, 'typing').catch(() => {})
 
-  buffer.timer = setTimeout(async () => {
-    const ac = new AbortController()
-    buffer.abortController = ac
-    const messages = [...buffer.messages]
-    const links = buffer.spanContexts.map(sc => ({ context: sc }))
-    buffer.messages = []
-    buffer.spanContexts = []
+  // Process immediately
+  const ac = new AbortController()
+  buffer.abortController = ac
+  const messages = [...buffer.messages]
+  const links = buffer.spanContexts.map(sc => ({ context: sc }))
+  buffer.messages = []
+  buffer.spanContexts = []
 
+  void (async () => {
     try {
       await withLinkedSpan('bot.processTherapyMessage', {
         'telegram.chat_id': chatId,
@@ -138,7 +130,7 @@ function bufferMessage(ctx: BotContext, chatId: number, chatMode: SessionType, m
       logger.error('Error processing therapy message:', err)
       chatBuffer.delete(chatId)
     }
-  }, debounceMs)
+  })()
 }
 
 async function processTherapyMessage(
@@ -236,12 +228,16 @@ async function processTherapyMessage(
       'PROFILE.md',
     )
 
+    // Resolve preferred language from patient record
+    const patient = await findPatientByTelegramId(telegramId)
+
     const sessionCtx: SessionContext = {
       sessionId: session.id,
       sessionType: chatMode,
       chatId,
       patientId: primaryPatientId,
       telegramId,
+      preferredLanguage: patient?.preferredLanguage ?? patient?.profile?.preferredLanguage ?? undefined,
       sdkSessionId: session.sdkSessionId ?? undefined,
       transcriptPath: session.transcriptPath,
       profilePath,
@@ -290,12 +286,12 @@ async function processTherapyMessage(
     // Send response to Telegram
     // Split long messages (Telegram limit is 4096 chars)
     if (response.length <= 4096) {
-      await ctx.api.sendMessage(chatId, response)
+      await ctx.api.sendMessage(chatId, response, { parse_mode: 'MarkdownV2' })
     }
     else {
       const chunks = splitMessage(response, 4096)
       for (const chunk of chunks) {
-        await ctx.api.sendMessage(chatId, chunk)
+        await ctx.api.sendMessage(chatId, chunk, { parse_mode: 'MarkdownV2' })
       }
     }
 

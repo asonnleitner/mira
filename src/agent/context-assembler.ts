@@ -12,6 +12,7 @@ export interface SessionContext {
   chatId: number
   patientId: number
   telegramId: number
+  preferredLanguage?: string
   sdkSessionId?: string
   transcriptPath: string
   profilePath: string
@@ -23,6 +24,7 @@ export async function assembleSystemPrompt(
 ): Promise<string> {
   const promptCtx: PromptContext = {
     sessionType: ctx.sessionType,
+    preferredLanguage: ctx.preferredLanguage,
   }
 
   // Load patient profile

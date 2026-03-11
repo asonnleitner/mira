@@ -43,6 +43,8 @@ export async function completeOnboarding(telegramId: number, profile: PatientPro
       onboardingComplete: true,
       firstName: profile.fullName,
       dateOfBirth: profile.dateOfBirth,
+      gender: profile.gender,
+      preferredLanguage: profile.preferredLanguage,
       profile,
       updatedAt: new Date(),
     })

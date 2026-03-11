@@ -1,9 +1,10 @@
-import { bigint, boolean, integer, jsonb, pgTable, timestamp, varchar } from 'drizzle-orm/pg-core'
+import { sql } from 'drizzle-orm'
+import { integer, sqliteTable, text } from 'drizzle-orm/sqlite-core'
 import * as z from 'zod'
 
 export const PatientProfileSchema = z.object({
   fullName: z.string().optional(),
-  dateOfBirth: z.string().optional(),
+  dateOfBirth: z.iso.date().optional(),
   gender: z.string().optional(),
   occupation: z.string().optional(),
   relationshipStatus: z.string().optional(),
@@ -26,14 +27,16 @@ export const PatientProfileSchema = z.object({
 
 export type PatientProfile = z.infer<typeof PatientProfileSchema>
 
-export const patients = pgTable('patients', {
-  id: integer().primaryKey().generatedAlwaysAsIdentity(),
-  telegramId: bigint('telegram_id', { mode: 'number' }).notNull().unique(),
-  firstName: varchar('first_name', { length: 256 }),
-  username: varchar({ length: 256 }),
-  dateOfBirth: varchar('date_of_birth', { length: 10 }),
-  onboardingComplete: boolean('onboarding_complete').default(false).notNull(),
-  profile: jsonb('profile').$type<PatientProfile>().default({}),
-  createdAt: timestamp('created_at').defaultNow().notNull(),
-  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+export const patients = sqliteTable('patients', {
+  id: integer().primaryKey({ autoIncrement: true }),
+  telegramId: integer('telegram_id').notNull().unique(),
+  firstName: text('first_name', { length: 256 }),
+  username: text({ length: 256 }),
+  dateOfBirth: text('date_of_birth', { length: 10 }),
+  gender: text({ length: 64 }),
+  preferredLanguage: text('preferred_language', { length: 10 }),
+  onboardingComplete: integer({ mode: 'boolean' }).default(false).notNull(),
+  profile: text('profile', { mode: 'json' }).$type<PatientProfile>().default({}),
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
+  updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
 })

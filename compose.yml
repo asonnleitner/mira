@@ -31,25 +31,3 @@ services:
       COLLECTOR_OTLP_ENABLED: 'true'
     logging: *default-logging
     restart: unless-stopped
-
-  postgres:
-    image: postgres:18
-    volumes:
-      - postgres_data:/var/lib/postgresql
-    environment:
-      POSTGRES_DB: ${POSTGRES_DB}
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-    healthcheck:
-      test: [CMD-SHELL, pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB]
-      interval: 5s
-      timeout: 5s
-      retries: 5
-    expose:
-      - 5432
-#    ports:
-#      - ${POSTGRES_PORT}:5432
-
-volumes:
-  postgres_data:
-    driver: local

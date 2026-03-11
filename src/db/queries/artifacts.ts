@@ -1,5 +1,5 @@
 import type { InsertArtifact } from '~/db/zod'
-import { and, desc, eq, ilike } from 'drizzle-orm'
+import { and, desc, eq, sql } from 'drizzle-orm'
 import { db, tables } from '~/db'
 
 export async function saveArtifact(data: Pick<InsertArtifact, 'sessionId' | 'patientId' | 'type' | 'content' | 'verbatimQuote' | 'clinicalRelevance'>) {
@@ -33,7 +33,7 @@ export async function searchArtifacts(patientId: number, keyword: string) {
     .where(
       and(
         eq(tables.clinicalArtifacts.patientId, patientId),
-        ilike(tables.clinicalArtifacts.content, `%${keyword}%`),
+        sql`LOWER(${tables.clinicalArtifacts.content}) LIKE LOWER(${`%${keyword}%`})`,
       ),
     )
     .orderBy(desc(tables.clinicalArtifacts.clinicalRelevance))

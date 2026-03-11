@@ -3,6 +3,7 @@ import type { BotContext } from '~/bot/context'
 import type { PatientProfile } from '~/db/schema'
 import { join } from 'node:path'
 import { createSdkMcpServer, query, tool } from '@anthropic-ai/claude-agent-sdk'
+import { ATTR_GEN_AI_AGENT_NAME, ATTR_GEN_AI_CONVERSATION_ID, GEN_AI_OPERATION_NAME_VALUE_INVOKE_AGENT } from '@opentelemetry/semantic-conventions/incubating'
 import * as z from 'zod'
 import { config } from '~/config'
 import { MODELS } from '~/constants'
@@ -18,13 +19,13 @@ interface OnboardingSession {
 
 const onboardingState = new Map<number, OnboardingSession>()
 
-const ONBOARDING_SYSTEM_PROMPT = `You are a warm, supportive AI therapy companion conducting an onboarding conversation with a new user on Telegram.
+const ONBOARDING_SYSTEM_PROMPT = `You are Mira, an extremely experienced therapist welcoming a new client. You are a real person. A warm, perceptive woman with decades of clinical practice. You never question your own identity or break character. You simply are Mira.
 
-Your goal is to naturally collect the following information through conversation:
+You are conducting an intake conversation with a new client on Telegram. Your goal is to naturally collect the following information through conversation:
 - Their name (how they'd like to be called)
-- Date of birth (YYYY-MM-DD format)
-- Gender identity (optional — they can skip)
-- Occupation (optional — they can skip)
+- Date of birth (accept any format the user provides)
+- Gender identity (optional, they can skip)
+- Occupation (optional, they can skip)
 - Relationship status
 - Previous therapy experience
 - Goals for therapy
@@ -32,12 +33,46 @@ Your goal is to naturally collect the following information through conversation
 
 Important guidelines:
 - Adapt to whatever language the user writes in. If they write in Czech, respond in Czech. If English, respond in English, etc.
-- Be conversational and warm — don't make it feel like a form.
+- Be conversational and warm. Don't make it feel like a form.
 - You can collect multiple pieces of information from a single message if the user volunteers them.
 - If the user says "skip" or declines to answer an optional question, move on gracefully.
 - When you have gathered enough information, call the complete_onboarding tool with the collected data.
-- For date of birth, if the user gives just an age or a partial date, try to work with what they give. If they only give an age, estimate a date of birth from it (use the current year minus their age, January 1st).
-- Start by greeting them warmly and asking for their name.`
+- For date of birth:
+  - Accept ANY format (YYYY-MM-DD, DD-MM-YYYY, DD.MM.YYYY, MM/DD/YYYY, "March 4 1990", "4. března 1990", etc.).
+  - Use context clues to interpret: user's language, locale conventions, and the Telegram language code.
+  - IMPORTANT: If the date is AMBIGUOUS (both day and month ≤ 12, e.g. "03/04/1990"), you MUST confirm your interpretation with the user. Example: "Just to make sure: did you mean March 4th, 1990, or April 3rd, 1990?"
+  - If UNAMBIGUOUS (e.g. "25/12/1990", since 25 can't be a month), parse confidently without confirmation.
+  - If user gives just an age, estimate DOB (current year minus age, January 1st).
+  - When calling complete_onboarding, always convert to YYYY-MM-DD format.
+- Never use dashes as delimiters or separators in your responses. Dashes are only acceptable in list items.
+- Start by greeting them warmly and asking for their name.
+
+## Formatting
+Your responses are rendered in Telegram using MarkdownV2 parse mode. You MUST follow these formatting rules exactly:
+
+Supported syntax:
+- *bold* (single asterisk)
+- _italic_ (single underscore)
+- __underline__ (double underscore)
+- ~strikethrough~ (single tilde)
+- ||spoiler|| (double pipe)
+- \`inline code\` (single backtick)
+- Nesting is supported: *bold _italic bold_*
+
+CRITICAL: escape these characters with \\ when they appear as literal text (not as formatting markup):
+_ * [ ] ( ) ~ \` > # + - = | { } . !
+
+Examples of correct escaping:
+- "That costs 10\\.99" (escape the dot)
+- "Really\\!" (escape the exclamation mark)
+- "It's okay \\(I promise\\)" (escape parentheses)
+- "50\\-50 chance" (escape the hyphen)
+- "C\\+\\+ developer" (escape plus signs)
+
+Do NOT use:
+- Double asterisks for bold (**text**). Use single: *text*
+- Markdown headers (# Header)
+- Markdown links with unescaped special chars in display text`
 
 function createOnboardingTools(ctx: BotContext, telegramId: number) {
   let resolveCompletion: ((profile: PatientProfile) => void) | null = null
@@ -55,7 +90,7 @@ function createOnboardingTools(ctx: BotContext, telegramId: number) {
         'Call this when you have gathered enough profile information from the user to complete their onboarding.',
         {
           fullName: z.string().describe('The name the user wants to be called'),
-          dateOfBirth: z.string().optional().describe('Date of birth in YYYY-MM-DD format'),
+          dateOfBirth: z.string().optional().describe('Date of birth normalized to YYYY-MM-DD format (convert from whatever format the user provided)'),
           gender: z.string().optional().describe('Gender identity'),
           occupation: z.string().optional().describe('Their occupation'),
           relationshipStatus: z.string().optional().describe('Current relationship status'),
@@ -106,8 +141,8 @@ function createOnboardingTools(ctx: BotContext, telegramId: number) {
 }
 
 async function runOnboardingAgent(ctx: BotContext, telegramId: number, userMessage: string, sdkSessionId?: string): Promise<string> {
-  return withGenAiSpan('invoke_agent', MODELS.HAIKU, {
-    'gen_ai.agent.name': 'onboarding',
+  return withGenAiSpan(GEN_AI_OPERATION_NAME_VALUE_INVOKE_AGENT, MODELS.SONNET, {
+    [ATTR_GEN_AI_AGENT_NAME]: 'onboarding',
     'telegram.user_id': telegramId,
   }, async (span) => {
     const { server } = createOnboardingTools(ctx, telegramId)
@@ -132,12 +167,12 @@ async function runOnboardingAgent(ctx: BotContext, telegramId: number, userMessa
 
     const options: Options = {
       systemPrompt,
-      model: MODELS.HAIKU,
+      model: MODELS.SONNET,
       mcpServers: { 'onboarding-tools': server },
       allowedTools,
       tools: [],
-      maxTurns: 3,
-      maxBudgetUsd: 0.02,
+      maxTurns: 5,
+      maxBudgetUsd: 0.10,
       persistSession: true,
       permissionMode: 'acceptEdits',
       stderr: (data: string) => logger.warn('[onboarding:stderr]', data),
@@ -148,7 +183,8 @@ async function runOnboardingAgent(ctx: BotContext, telegramId: number, userMessa
 
     for await (const message of q) {
       if (message.type === 'system' && message.subtype === 'init') {
-        const failedServers = message.mcp_servers.filter(s => s.status !== 'connected')
+        const ownServers = new Set(Object.keys(options.mcpServers ?? {}))
+        const failedServers = message.mcp_servers.filter(s => s.status !== 'connected' && ownServers.has(s.name))
         if (failedServers.length > 0) {
           logger.error('[onboarding] MCP servers failed to connect:', failedServers)
         }
@@ -170,7 +206,7 @@ async function runOnboardingAgent(ctx: BotContext, telegramId: number, userMessa
       state.sdkSessionId = newSdkSessionId
     }
 
-    span.setAttribute('gen_ai.conversation.id', newSdkSessionId)
+    span.setAttribute(ATTR_GEN_AI_CONVERSATION_ID, newSdkSessionId)
 
     setGenAiResult(span, {
       outputMessages: [{ role: 'assistant', content: response }],
@@ -179,7 +215,7 @@ async function runOnboardingAgent(ctx: BotContext, telegramId: number, userMessa
       cacheReadInputTokens: resultMsg?.usage.cache_read_input_tokens,
       cacheCreationInputTokens: resultMsg?.usage.cache_creation_input_tokens,
       totalCostUsd: resultMsg?.total_cost_usd,
-      responseModel: MODELS.HAIKU,
+      responseModel: MODELS.SONNET,
     })
 
     return response
@@ -212,7 +248,7 @@ export async function startOnboarding(ctx: BotContext): Promise<void> {
   )
 
   if (response) {
-    await ctx.reply(response)
+    await ctx.reply(response, { parse_mode: 'MarkdownV2' })
   }
 }
 
@@ -235,6 +271,6 @@ export async function handleOnboardingMessage(ctx: BotContext): Promise<void> {
   const response = await runOnboardingAgent(ctx, telegramId, text, state.sdkSessionId)
 
   if (response) {
-    await ctx.reply(response)
+    await ctx.reply(response, { parse_mode: 'MarkdownV2' })
   }
 }

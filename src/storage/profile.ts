@@ -11,7 +11,7 @@ export async function writeProfile(
 
   const now = new Date().toISOString()
   const sections: string[] = [
-    `# Patient Profile — ${profile.fullName || 'Unknown'}`,
+    `# Patient Profile: ${profile.fullName || 'Unknown'}`,
     '',
     `**Telegram ID:** ${telegramId}`,
     `**Last Updated:** ${now}`,
