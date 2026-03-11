@@ -9,6 +9,7 @@ import { MODELS } from '~/constants'
 import { completeOnboarding, createPatient, findPatientByTelegramId } from '~/db/queries/patients'
 import { PatientProfileSchema } from '~/db/schema/patients'
 import { writeProfile } from '~/storage/profile'
+import { logger } from '~/telemetry/logger'
 import { setGenAiContext, setGenAiResult, withGenAiSpan } from '~/telemetry/tracing'
 
 interface OnboardingSession {
@@ -139,16 +140,26 @@ async function runOnboardingAgent(ctx: BotContext, telegramId: number, userMessa
       maxBudgetUsd: 0.02,
       persistSession: true,
       permissionMode: 'acceptEdits',
+      stderr: (data: string) => logger.warn('[onboarding:stderr]', data),
       ...(sdkSessionId ? { resume: sdkSessionId } : {}),
     }
 
     const q = query({ prompt: userMessage, options })
 
     for await (const message of q) {
-      if (message.type === 'result' && message.subtype === 'success') {
+      if (message.type === 'system' && message.subtype === 'init') {
+        const failedServers = message.mcp_servers.filter(s => s.status !== 'connected')
+        if (failedServers.length > 0) {
+          logger.error('[onboarding] MCP servers failed to connect:', failedServers)
+        }
+      }
+      else if (message.type === 'result' && message.subtype === 'success') {
         response = message.result
         newSdkSessionId = message.session_id
         resultMsg = message
+      }
+      else if (message.type === 'result') {
+        logger.error('[onboarding] SDK error result:', message)
       }
     }
 

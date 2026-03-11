@@ -70,9 +70,7 @@ export function createTherapyTools(ctx: ToolContext) {
           ]),
           value: z
             .string()
-            .describe(
-              'The value to add/set. For array fields, this adds a new entry.',
-            ),
+            .describe('The value to add/set. For array fields, this adds a new entry.'),
         },
         async (args) => {
           const patient = await updatePatientProfile(ctx.telegramId, {})
@@ -85,8 +83,7 @@ export function createTherapyTools(ctx: ToolContext) {
             }
           }
 
-          const profile: PatientProfile
-            = (patient.profile as PatientProfile) ?? {}
+          const profile: PatientProfile = (patient.profile as PatientProfile) ?? {}
 
           if (args.field === 'attachmentStyle') {
             profile.attachmentStyle = args.value

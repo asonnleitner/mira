@@ -61,15 +61,24 @@ export async function startTherapySession(
         persistSession: true,
         abortController,
         permissionMode: 'acceptEdits',
-        stderr: (data: string) => logger.debug(data),
+        stderr: (data: string) => logger.warn('[therapist:stderr]', data),
       },
     })
 
     for await (const message of q) {
-      if (message.type === 'result' && message.subtype === 'success') {
+      if (message.type === 'system' && message.subtype === 'init') {
+        const failedServers = message.mcp_servers.filter(s => s.status !== 'connected')
+        if (failedServers.length > 0) {
+          logger.error('[therapist] MCP servers failed to connect:', failedServers)
+        }
+      }
+      else if (message.type === 'result' && message.subtype === 'success') {
         response = message.result
         sdkSessionId = message.session_id
         resultMsg = message
+      }
+      else if (message.type === 'result') {
+        logger.error('[therapist] SDK error result:', message)
       }
     }
 
@@ -135,14 +144,23 @@ export async function continueTherapySession(
         maxBudgetUsd: 0.5,
         abortController,
         permissionMode: 'acceptEdits',
-        stderr: (data: string) => logger.debug(data),
+        stderr: (data: string) => logger.warn('[therapist:stderr]', data),
       },
     })
 
     for await (const message of q) {
-      if (message.type === 'result' && message.subtype === 'success') {
+      if (message.type === 'system' && message.subtype === 'init') {
+        const failedServers = message.mcp_servers.filter(s => s.status !== 'connected')
+        if (failedServers.length > 0) {
+          logger.error('[therapist] MCP servers failed to connect:', failedServers)
+        }
+      }
+      else if (message.type === 'result' && message.subtype === 'success') {
         response = message.result
         resultMsg = message
+      }
+      else if (message.type === 'result') {
+        logger.error('[therapist] SDK error result:', message)
       }
     }
 

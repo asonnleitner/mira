@@ -78,6 +78,7 @@ Also identify any profile updates needed and whether a SOAP note should be gener
           maxBudgetUsd: 0.02,
           persistSession: false,
           permissionMode: 'acceptEdits',
+          stderr: (data: string) => logger.warn('[artifact-extractor:stderr]', data),
           outputFormat: {
             type: 'json_schema',
             schema: z.toJSONSchema(ArtifactSchema),
@@ -89,6 +90,9 @@ Also identify any profile updates needed and whether a SOAP note should be gener
         if (message.type === 'result' && message.subtype === 'success') {
           result = message.structured_output
           resultMsg = message
+        }
+        else if (message.type === 'result') {
+          logger.error('[artifact-extractor] SDK error result:', message)
         }
       }
 
@@ -220,6 +224,7 @@ Provide a structured SOAP note based on the therapy session.`
           maxBudgetUsd: 0.02,
           persistSession: false,
           permissionMode: 'acceptEdits',
+          stderr: (data: string) => logger.warn('[soap-note:stderr]', data),
           outputFormat: {
             type: 'json_schema',
             schema: z.toJSONSchema(soapSchema),
@@ -231,6 +236,9 @@ Provide a structured SOAP note based on the therapy session.`
         if (message.type === 'result' && message.subtype === 'success') {
           result = message.structured_output
           resultMsg = message
+        }
+        else if (message.type === 'result') {
+          logger.error('[soap-note] SDK error result:', message)
         }
       }
 

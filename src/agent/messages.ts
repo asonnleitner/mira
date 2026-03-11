@@ -47,6 +47,7 @@ export async function generateMessage(opts: {
           maxBudgetUsd: 0.005,
           tools: [],
           permissionMode: 'acceptEdits',
+          stderr: (data: string) => logger.warn('[messages:stderr]', data),
         },
       })
 
@@ -54,6 +55,9 @@ export async function generateMessage(opts: {
         if (message.type === 'result' && message.subtype === 'success') {
           response = message.result
           resultMsg = message
+        }
+        else if (message.type === 'result') {
+          logger.error('[messages] SDK error result:', message)
         }
       }
 
