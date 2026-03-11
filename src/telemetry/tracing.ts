@@ -1,16 +1,7 @@
 import type { Attributes, Link, Span } from '@opentelemetry/api'
 import type { Model } from '~/constants'
 import { SpanKind, SpanStatusCode, trace } from '@opentelemetry/api'
-import {
-  ATTR_GEN_AI_INPUT_MESSAGES,
-  ATTR_GEN_AI_OUTPUT_MESSAGES,
-  ATTR_GEN_AI_SYSTEM_INSTRUCTIONS,
-  ATTR_GEN_AI_TOOL_DEFINITIONS,
-  ATTR_GEN_AI_USAGE_CACHE_CREATION_INPUT_TOKENS,
-  ATTR_GEN_AI_USAGE_CACHE_READ_INPUT_TOKENS,
-  ATTR_GEN_AI_USAGE_INPUT_TOKENS,
-  ATTR_GEN_AI_USAGE_OUTPUT_TOKENS,
-} from '@opentelemetry/semantic-conventions/incubating'
+import { ATTR_GEN_AI_INPUT_MESSAGES, ATTR_GEN_AI_OPERATION_NAME, ATTR_GEN_AI_OUTPUT_MESSAGES, ATTR_GEN_AI_PROVIDER_NAME, ATTR_GEN_AI_REQUEST_MODEL, ATTR_GEN_AI_SYSTEM_INSTRUCTIONS, ATTR_GEN_AI_TOOL_DEFINITIONS, ATTR_GEN_AI_USAGE_CACHE_CREATION_INPUT_TOKENS, ATTR_GEN_AI_USAGE_CACHE_READ_INPUT_TOKENS, ATTR_GEN_AI_USAGE_INPUT_TOKENS, ATTR_GEN_AI_USAGE_OUTPUT_TOKENS, GEN_AI_PROVIDER_NAME_VALUE_ANTHROPIC } from '@opentelemetry/semantic-conventions/incubating'
 import { config } from '~/config'
 
 const tracer = trace.getTracer('therapy-bot')
@@ -63,14 +54,15 @@ export async function withLinkedSpan<T>(
 export function captureSpanContext() {
   return trace.getActiveSpan()?.spanContext()
 }
+export type GenAiOperationNameValue = 'chat' | 'create_agent' | 'embeddings' | 'execute_tool' | 'generate_content' | 'invoke_agent' | 'retrieval' | 'text_completion'
 
-export async function withGenAiSpan<T>(operationName: string, model: Model, attrs: Attributes, fn: (span: Span) => Promise<T>): Promise<T> {
+export async function withGenAiSpan<T>(operationName: GenAiOperationNameValue, model: Model, attrs: Attributes, fn: (span: Span) => Promise<T>): Promise<T> {
   const spanName = `${operationName} ${model}`
 
   const genAiAttrs: Attributes = {
-    'gen_ai.operation.name': operationName,
-    'gen_ai.provider.name': 'anthropic',
-    'gen_ai.request.model': model,
+    [ATTR_GEN_AI_OPERATION_NAME]: operationName,
+    [ATTR_GEN_AI_PROVIDER_NAME]: GEN_AI_PROVIDER_NAME_VALUE_ANTHROPIC,
+    [ATTR_GEN_AI_REQUEST_MODEL]: model,
     ...attrs,
   }
 

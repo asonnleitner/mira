@@ -30,7 +30,7 @@ export async function createSession(data: {
   return session
 }
 
-export async function updateSessionSdkId(sessionId: number, sdkSessionId: string) {
+export async function updateSessionSdkId(sessionId: number, sdkSessionId: string | null) {
   await db
     .update(tables.therapySessions)
     .set({ sdkSessionId })

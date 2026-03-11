@@ -1,5 +1,6 @@
 import type { SDKResultSuccess } from '@anthropic-ai/claude-agent-sdk'
 import { query } from '@anthropic-ai/claude-agent-sdk'
+import { GEN_AI_OPERATION_NAME_VALUE_CHAT } from '@opentelemetry/semantic-conventions/incubating'
 import { MODELS } from '~/constants'
 import { logger } from '~/telemetry/logger'
 import { setGenAiContext, setGenAiResult, withGenAiSpan } from '~/telemetry/tracing'
@@ -9,7 +10,7 @@ export async function generateMessage(opts: {
   context?: Record<string, unknown>
   language?: string
 }): Promise<string> {
-  return withGenAiSpan('chat', MODELS.HAIKU, {
+  return withGenAiSpan(GEN_AI_OPERATION_NAME_VALUE_CHAT, MODELS.HAIKU, {
     'bot.purpose': opts.purpose,
   }, async (span) => {
     const languageHint = opts.language && opts.language !== 'auto'

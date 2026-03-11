@@ -3,6 +3,7 @@ import type { SessionContext } from '~/agent/context-assembler'
 import type { PatientProfile } from '~/db/schema'
 import { dirname, join } from 'node:path'
 import { query } from '@anthropic-ai/claude-agent-sdk'
+import { ATTR_GEN_AI_OUTPUT_TYPE, GEN_AI_OPERATION_NAME_VALUE_CHAT, GEN_AI_OUTPUT_TYPE_VALUE_JSON } from '@opentelemetry/semantic-conventions/incubating'
 import * as z from 'zod'
 import { MODELS } from '~/constants'
 import { saveArtifact } from '~/db/queries/artifacts'
@@ -37,8 +38,8 @@ export async function extractArtifacts(
   patientMessage: string,
   therapistResponse: string,
 ): Promise<void> {
-  await withGenAiSpan('chat', MODELS.HAIKU, {
-    'gen_ai.output.type': 'json',
+  await withGenAiSpan(GEN_AI_OPERATION_NAME_VALUE_CHAT, MODELS.HAIKU, {
+    [ATTR_GEN_AI_OUTPUT_TYPE]: GEN_AI_OUTPUT_TYPE_VALUE_JSON,
     'bot.session_id': ctx.sessionId,
   }, async (span) => {
     try {
@@ -186,8 +187,8 @@ Also identify any profile updates needed and whether a SOAP note should be gener
 }
 
 async function generateSoapNote(ctx: SessionContext): Promise<void> {
-  await withGenAiSpan('chat', MODELS.HAIKU, {
-    'gen_ai.output.type': 'json',
+  await withGenAiSpan(GEN_AI_OPERATION_NAME_VALUE_CHAT, MODELS.HAIKU, {
+    [ATTR_GEN_AI_OUTPUT_TYPE]: GEN_AI_OUTPUT_TYPE_VALUE_JSON,
     'bot.session_id': ctx.sessionId,
   }, async (span) => {
     try {

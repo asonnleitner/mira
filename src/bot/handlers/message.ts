@@ -4,7 +4,7 @@ import type { BotContext } from '~/bot/context'
 import type { SessionType } from '~/db/schema'
 import { join } from 'node:path'
 import { extractArtifacts } from '~/agent/artifact-extractor'
-import { continueTherapySession, startTherapySession } from '~/agent/therapist'
+import { continueTherapySession, StaleSessionError, startTherapySession } from '~/agent/therapist'
 import { handleOnboardingMessage, isOnboarding, startOnboarding } from '~/bot/handlers/onboarding'
 import { detectChatMode } from '~/bot/router'
 import { config } from '~/config'
@@ -256,12 +256,26 @@ async function processTherapyMessage(
     let response: string
 
     if (session.sdkSessionId) {
-      response = await continueTherapySession(
-        sessionCtx,
-        combinedMessage,
-        session.sdkSessionId,
-        sdkAbortController,
-      )
+      try {
+        response = await continueTherapySession(
+          sessionCtx,
+          combinedMessage,
+          session.sdkSessionId,
+          sdkAbortController,
+        )
+      }
+      catch (err) {
+        if (err instanceof StaleSessionError) {
+          logger.warn(`[message] Stale SDK session ${session.sdkSessionId}, starting fresh session`)
+          await updateSessionSdkId(session.id, null)
+          const result = await startTherapySession(sessionCtx, combinedMessage, sdkAbortController)
+          response = result.response
+          await updateSessionSdkId(session.id, result.sdkSessionId)
+        }
+        else {
+          throw err
+        }
+      }
     }
     else {
       const result = await startTherapySession(sessionCtx, combinedMessage, sdkAbortController)
