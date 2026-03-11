@@ -1,12 +1,12 @@
-import type { PatientProfile } from '../db/schema/patients.js'
-import type { SessionContext } from './context-assembler.js'
+import type { SessionContext } from '~/agent/context-assembler'
+import type { PatientProfile } from '~/db/schema'
 import { dirname, join } from 'node:path'
 import { query } from '@anthropic-ai/claude-agent-sdk'
-import { z } from 'zod/v4'
-import { saveArtifact } from '../db/queries/artifacts.js'
-import { updatePatientProfile } from '../db/queries/patients.js'
-import { readProfile, writeProfile } from '../storage/profile.js'
-import { writeSoapNote } from '../storage/soap-notes.js'
+import * as z from 'zod'
+import { saveArtifact } from '~/db/queries/artifacts'
+import { updatePatientProfile } from '~/db/queries/patients'
+import { readProfile, writeProfile } from '~/storage/profile'
+import { writeSoapNote } from '~/storage/soap-notes'
 
 const ArtifactSchema = z.object({
   artifacts: z.array(

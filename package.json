@@ -8,6 +8,7 @@
     "db:push": "drizzle-kit push",
     "db:studio": "drizzle-kit studio",
     "lint": "eslint",
+    "check": "bun run typecheck && bun run lint:fix",
     "lint:fix": "eslint --fix",
     "typecheck": "tsc --noEmit"
   },

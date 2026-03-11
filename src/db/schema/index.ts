@@ -1,18 +1,22 @@
+import type { PatientProfile } from '~/db/schema/patients'
 import { defineRelations } from 'drizzle-orm'
-import { clinicalArtifacts, artifactTypeEnum } from './artifacts.js'
-import { sessionMessages } from './messages.js'
-import { patients, type PatientProfile } from './patients.js'
-import { therapySessions, sessionTypeEnum, sessionStatusEnum } from './sessions.js'
+import { artifactTypeEnum, clinicalArtifacts } from '~/db/schema/artifacts'
+import { grammySessions } from '~/db/schema/grammy-sessions'
+import { sessionMessages } from '~/db/schema/messages'
+import { patients } from '~/db/schema/patients'
+import { sessionStatusEnum, sessionTypeEnum, therapySessions } from '~/db/schema/sessions'
 
-export {
-  patients,
-  type PatientProfile,
-  therapySessions,
-  sessionTypeEnum,
-  sessionStatusEnum,
-  sessionMessages,
-  clinicalArtifacts,
+export type { PatientProfile }
+
+export const schema = {
   artifactTypeEnum,
+  clinicalArtifacts,
+  grammySessions,
+  patients,
+  sessionMessages,
+  sessionStatusEnum,
+  sessionTypeEnum,
+  therapySessions,
 }
 
 export const relations = defineRelations(

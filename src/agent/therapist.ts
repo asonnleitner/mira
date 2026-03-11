@@ -1,11 +1,8 @@
-import type { SessionContext } from './context-assembler.js'
-import type { ToolContext } from './tools.js'
+import type { SessionContext } from '~/agent/context-assembler'
+import type { ToolContext } from '~/agent/tools'
 import { query } from '@anthropic-ai/claude-agent-sdk'
-import {
-  assembleSystemPrompt,
-
-} from './context-assembler.js'
-import { createTherapyTools } from './tools.js'
+import { assembleSystemPrompt } from '~/agent/context-assembler'
+import { createTherapyTools } from '~/agent/tools'
 
 const ALLOWED_TOOLS = [
   'mcp__therapy-tools__save_session_note',

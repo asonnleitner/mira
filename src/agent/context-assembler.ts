@@ -1,9 +1,9 @@
-import type { PromptContext } from './system-prompt.js'
+import type { PromptContext } from '~/agent/system-prompt'
 import { join } from 'node:path'
-import { config } from '../config.js'
-import { getArtifactsByPatient } from '../db/queries/artifacts.js'
-import { readProfile } from '../storage/profile.js'
-import { buildSystemPrompt } from './system-prompt.js'
+import { buildSystemPrompt } from '~/agent/system-prompt'
+import { config } from '~/config'
+import { getArtifactsByPatient } from '~/db/queries/artifacts'
+import { readProfile } from '~/storage/profile'
 
 export interface SessionContext {
   sessionId: number
