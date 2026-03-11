@@ -1,7 +1,8 @@
+import type { SDKResultSuccess } from '@anthropic-ai/claude-agent-sdk'
 import { query } from '@anthropic-ai/claude-agent-sdk'
 import { MODELS } from '~/constants'
 import { logger } from '~/telemetry/logger'
-import { withGenAiSpan } from '~/telemetry/tracing'
+import { setGenAiContext, setGenAiResult, withGenAiSpan } from '~/telemetry/tracing'
 
 export async function generateMessage(opts: {
   purpose: string
@@ -10,7 +11,7 @@ export async function generateMessage(opts: {
 }): Promise<string> {
   return withGenAiSpan('chat', MODELS.HAIKU, {
     'bot.purpose': opts.purpose,
-  }, async () => {
+  }, async (span) => {
     const languageHint = opts.language && opts.language !== 'auto'
       ? `Respond in ${opts.language}.`
       : 'Respond in the same language as the user context suggests, defaulting to English if unclear.'
@@ -27,8 +28,15 @@ export async function generateMessage(opts: {
       ? `Purpose: ${opts.purpose}\nContext: ${JSON.stringify(opts.context)}`
       : `Purpose: ${opts.purpose}`
 
+    setGenAiContext(span, {
+      systemPrompt,
+      inputMessages: [{ role: 'user', content: prompt }],
+      toolDefinitions: [],
+    })
+
     try {
       let response = ''
+      let resultMsg: SDKResultSuccess | undefined
 
       const q = query({
         prompt,
@@ -38,14 +46,27 @@ export async function generateMessage(opts: {
           maxTurns: 1,
           maxBudgetUsd: 0.005,
           tools: [],
+          permissionMode: 'bypassPermissions',
+          allowDangerouslySkipPermissions: true,
         },
       })
 
       for await (const message of q) {
         if (message.type === 'result' && message.subtype === 'success') {
           response = message.result
+          resultMsg = message
         }
       }
+
+      setGenAiResult(span, {
+        outputMessages: [{ role: 'assistant', content: response }],
+        inputTokens: resultMsg?.usage.input_tokens,
+        outputTokens: resultMsg?.usage.output_tokens,
+        cacheReadInputTokens: resultMsg?.usage.cache_read_input_tokens,
+        cacheCreationInputTokens: resultMsg?.usage.cache_creation_input_tokens,
+        totalCostUsd: resultMsg?.total_cost_usd,
+        responseModel: MODELS.HAIKU,
+      })
 
       return response || getFallback(opts.purpose)
     }

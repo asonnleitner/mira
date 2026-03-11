@@ -1,4 +1,4 @@
-import type { Options } from '@anthropic-ai/claude-agent-sdk'
+import type { Options, SDKResultSuccess } from '@anthropic-ai/claude-agent-sdk'
 import type { BotContext } from '~/bot/context'
 import type { PatientProfile } from '~/db/schema'
 import { join } from 'node:path'
@@ -9,7 +9,7 @@ import { MODELS } from '~/constants'
 import { completeOnboarding, createPatient, findPatientByTelegramId } from '~/db/queries/patients'
 import { PatientProfileSchema } from '~/db/schema/patients'
 import { writeProfile } from '~/storage/profile'
-import { withGenAiSpan } from '~/telemetry/tracing'
+import { setGenAiContext, setGenAiResult, withGenAiSpan } from '~/telemetry/tracing'
 
 interface OnboardingSession {
   sdkSessionId?: string
@@ -116,18 +116,30 @@ async function runOnboardingAgent(ctx: BotContext, telegramId: number, userMessa
       ? `\nThe user's Telegram language is set to "${languageCode}". Consider starting in this language unless they write in a different one.`
       : ''
 
+    const systemPrompt = ONBOARDING_SYSTEM_PROMPT + languageHint
+    const allowedTools = ['mcp__onboarding-tools__complete_onboarding']
+
+    setGenAiContext(span, {
+      systemPrompt,
+      inputMessages: [{ role: 'user', content: userMessage }],
+      toolDefinitions: allowedTools.map(name => ({ name })),
+    })
+
     let response = ''
     let newSdkSessionId = ''
+    let resultMsg: SDKResultSuccess | undefined
 
     const options: Options = {
-      systemPrompt: ONBOARDING_SYSTEM_PROMPT + languageHint,
+      systemPrompt,
       model: MODELS.HAIKU,
       mcpServers: { 'onboarding-tools': server },
-      allowedTools: ['mcp__onboarding-tools__complete_onboarding'],
+      allowedTools,
       tools: [],
       maxTurns: 3,
       maxBudgetUsd: 0.02,
       persistSession: true,
+      permissionMode: 'bypassPermissions',
+      allowDangerouslySkipPermissions: true,
       ...(sdkSessionId ? { resume: sdkSessionId } : {}),
     }
 
@@ -137,6 +149,7 @@ async function runOnboardingAgent(ctx: BotContext, telegramId: number, userMessa
       if (message.type === 'result' && message.subtype === 'success') {
         response = message.result
         newSdkSessionId = message.session_id
+        resultMsg = message
       }
     }
 
@@ -148,6 +161,16 @@ async function runOnboardingAgent(ctx: BotContext, telegramId: number, userMessa
     }
 
     span.setAttribute('gen_ai.conversation.id', newSdkSessionId)
+
+    setGenAiResult(span, {
+      outputMessages: [{ role: 'assistant', content: response }],
+      inputTokens: resultMsg?.usage.input_tokens,
+      outputTokens: resultMsg?.usage.output_tokens,
+      cacheReadInputTokens: resultMsg?.usage.cache_read_input_tokens,
+      cacheCreationInputTokens: resultMsg?.usage.cache_creation_input_tokens,
+      totalCostUsd: resultMsg?.total_cost_usd,
+      responseModel: MODELS.HAIKU,
+    })
 
     return response
   })

@@ -1,3 +1,4 @@
+import type { SDKResultSuccess } from '@anthropic-ai/claude-agent-sdk'
 import type { SessionContext } from '~/agent/context-assembler'
 import type { PatientProfile } from '~/db/schema'
 import { dirname, join } from 'node:path'
@@ -11,7 +12,7 @@ import { soapSchema } from '~/db/zod'
 import { readProfile, writeProfile } from '~/storage/profile'
 import { writeSoapNote } from '~/storage/soap-notes'
 import { logger } from '~/telemetry/logger'
-import { withGenAiSpan } from '~/telemetry/tracing'
+import { setGenAiContext, setGenAiResult, withGenAiSpan } from '~/telemetry/tracing'
 
 const ArtifactSchema = z.object({
   artifacts: z.array(
@@ -39,7 +40,7 @@ export async function extractArtifacts(
   await withGenAiSpan('chat', MODELS.HAIKU, {
     'gen_ai.output.type': 'json',
     'bot.session_id': ctx.sessionId,
-  }, async () => {
+  }, async (span) => {
     try {
       const prompt = `Analyze this therapy exchange and extract clinical artifacts.
 
@@ -56,18 +57,28 @@ ${therapistResponse}
 Extract any clinically significant artifacts (disclosures, insights, emotions, patterns, etc.).
 Also identify any profile updates needed and whether a SOAP note should be generated (only if this feels like a natural session ending point).`
 
+      const systemPrompt = 'You are a clinical note-taking assistant. Extract therapy artifacts from the exchange. Be precise and clinical. Only extract genuinely significant items — not every message warrants artifacts.'
+
+      setGenAiContext(span, {
+        systemPrompt,
+        inputMessages: [{ role: 'user', content: prompt }],
+        toolDefinitions: [],
+      })
+
       let result: unknown = null
+      let resultMsg: SDKResultSuccess | undefined
 
       const q = query({
         prompt,
         options: {
-          systemPrompt:
-            'You are a clinical note-taking assistant. Extract therapy artifacts from the exchange. Be precise and clinical. Only extract genuinely significant items — not every message warrants artifacts.',
+          systemPrompt,
           model: MODELS.HAIKU,
           tools: [],
           maxTurns: 1,
           maxBudgetUsd: 0.02,
           persistSession: false,
+          permissionMode: 'bypassPermissions',
+          allowDangerouslySkipPermissions: true,
           outputFormat: {
             type: 'json_schema',
             schema: z.toJSONSchema(ArtifactSchema),
@@ -78,8 +89,19 @@ Also identify any profile updates needed and whether a SOAP note should be gener
       for await (const message of q) {
         if (message.type === 'result' && message.subtype === 'success') {
           result = message.structured_output
+          resultMsg = message
         }
       }
+
+      setGenAiResult(span, {
+        outputMessages: [{ role: 'assistant', content: JSON.stringify(result) }],
+        inputTokens: resultMsg?.usage.input_tokens,
+        outputTokens: resultMsg?.usage.output_tokens,
+        cacheReadInputTokens: resultMsg?.usage.cache_read_input_tokens,
+        cacheCreationInputTokens: resultMsg?.usage.cache_creation_input_tokens,
+        totalCostUsd: resultMsg?.total_cost_usd,
+        responseModel: MODELS.HAIKU,
+      })
 
       if (!result)
         return
@@ -164,7 +186,7 @@ async function generateSoapNote(ctx: SessionContext): Promise<void> {
   await withGenAiSpan('chat', MODELS.HAIKU, {
     'gen_ai.output.type': 'json',
     'bot.session_id': ctx.sessionId,
-  }, async () => {
+  }, async (span) => {
     try {
       const profileContent = await readProfile(ctx.profilePath)
 
@@ -178,18 +200,28 @@ Session ID: ${ctx.sessionId}
 
 Provide a structured SOAP note based on the therapy session.`
 
+      const systemPrompt = 'You are a clinical documentation assistant. Generate concise, professional SOAP notes for therapy sessions.'
+
+      setGenAiContext(span, {
+        systemPrompt,
+        inputMessages: [{ role: 'user', content: prompt }],
+        toolDefinitions: [],
+      })
+
       let result: unknown = null
+      let resultMsg: SDKResultSuccess | undefined
 
       const q = query({
         prompt,
         options: {
-          systemPrompt:
-            'You are a clinical documentation assistant. Generate concise, professional SOAP notes for therapy sessions.',
+          systemPrompt,
           model: MODELS.HAIKU,
           tools: [],
           maxTurns: 1,
           maxBudgetUsd: 0.02,
           persistSession: false,
+          permissionMode: 'bypassPermissions',
+          allowDangerouslySkipPermissions: true,
           outputFormat: {
             type: 'json_schema',
             schema: z.toJSONSchema(soapSchema),
@@ -200,8 +232,19 @@ Provide a structured SOAP note based on the therapy session.`
       for await (const message of q) {
         if (message.type === 'result' && message.subtype === 'success') {
           result = message.structured_output
+          resultMsg = message
         }
       }
+
+      setGenAiResult(span, {
+        outputMessages: [{ role: 'assistant', content: JSON.stringify(result) }],
+        inputTokens: resultMsg?.usage.input_tokens,
+        outputTokens: resultMsg?.usage.output_tokens,
+        cacheReadInputTokens: resultMsg?.usage.cache_read_input_tokens,
+        cacheCreationInputTokens: resultMsg?.usage.cache_creation_input_tokens,
+        totalCostUsd: resultMsg?.total_cost_usd,
+        responseModel: MODELS.HAIKU,
+      })
 
       if (!result)
         return

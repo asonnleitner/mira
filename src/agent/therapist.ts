@@ -1,10 +1,11 @@
+import type { SDKResultSuccess } from '@anthropic-ai/claude-agent-sdk'
 import type { SessionContext } from '~/agent/context-assembler'
 import type { ToolContext } from '~/agent/tools'
 import { query } from '@anthropic-ai/claude-agent-sdk'
 import { assembleSystemPrompt } from '~/agent/context-assembler'
 import { createTherapyTools } from '~/agent/tools'
 import { MODELS } from '~/constants'
-import { withGenAiSpan } from '~/telemetry/tracing'
+import { setGenAiContext, setGenAiResult, withGenAiSpan } from '~/telemetry/tracing'
 
 const ALLOWED_TOOLS = [
   'mcp__therapy-tools__save_session_note',
@@ -35,8 +36,15 @@ export async function startTherapySession(
     const tools = createTherapyTools(toolCtx)
     const systemPrompt = await assembleSystemPrompt(sessionCtx)
 
+    setGenAiContext(span, {
+      systemPrompt,
+      inputMessages: [{ role: 'user', content: patientMessage }],
+      toolDefinitions: ALLOWED_TOOLS.map(name => ({ name })),
+    })
+
     let response = ''
     let sdkSessionId = ''
+    let resultMsg: SDKResultSuccess | undefined
 
     const q = query({
       prompt: patientMessage,
@@ -51,6 +59,8 @@ export async function startTherapySession(
         cwd: sessionCtx.dataDir,
         persistSession: true,
         abortController,
+        permissionMode: 'bypassPermissions',
+        allowDangerouslySkipPermissions: true,
       },
     })
 
@@ -58,11 +68,21 @@ export async function startTherapySession(
       if (message.type === 'result' && message.subtype === 'success') {
         response = message.result
         sdkSessionId = message.session_id
+        resultMsg = message
       }
     }
 
     span.setAttribute('gen_ai.conversation.id', sdkSessionId)
-    span.setAttribute('gen_ai.response.model', MODELS.SONNET)
+
+    setGenAiResult(span, {
+      outputMessages: [{ role: 'assistant', content: response }],
+      inputTokens: resultMsg?.usage.input_tokens,
+      outputTokens: resultMsg?.usage.output_tokens,
+      cacheReadInputTokens: resultMsg?.usage.cache_read_input_tokens,
+      cacheCreationInputTokens: resultMsg?.usage.cache_creation_input_tokens,
+      totalCostUsd: resultMsg?.total_cost_usd,
+      responseModel: MODELS.SONNET,
+    })
 
     return { response, sdkSessionId }
   })
@@ -92,7 +112,14 @@ export async function continueTherapySession(
     const tools = createTherapyTools(toolCtx)
     const systemPrompt = await assembleSystemPrompt(sessionCtx)
 
+    setGenAiContext(span, {
+      systemPrompt,
+      inputMessages: [{ role: 'user', content: patientMessage }],
+      toolDefinitions: ALLOWED_TOOLS.map(name => ({ name })),
+    })
+
     let response = ''
+    let resultMsg: SDKResultSuccess | undefined
 
     const q = query({
       prompt: patientMessage,
@@ -106,16 +133,27 @@ export async function continueTherapySession(
         maxTurns: 3,
         maxBudgetUsd: 0.5,
         abortController,
+        permissionMode: 'bypassPermissions',
+        allowDangerouslySkipPermissions: true,
       },
     })
 
     for await (const message of q) {
       if (message.type === 'result' && message.subtype === 'success') {
         response = message.result
+        resultMsg = message
       }
     }
 
-    span.setAttribute('gen_ai.response.model', MODELS.SONNET)
+    setGenAiResult(span, {
+      outputMessages: [{ role: 'assistant', content: response }],
+      inputTokens: resultMsg?.usage.input_tokens,
+      outputTokens: resultMsg?.usage.output_tokens,
+      cacheReadInputTokens: resultMsg?.usage.cache_read_input_tokens,
+      cacheCreationInputTokens: resultMsg?.usage.cache_creation_input_tokens,
+      totalCostUsd: resultMsg?.total_cost_usd,
+      responseModel: MODELS.SONNET,
+    })
 
     return response
   })

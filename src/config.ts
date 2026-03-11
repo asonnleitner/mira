@@ -12,6 +12,7 @@ const envSchema = z.object({
   POSTGRES_HOST: z.string(),
   OTEL_SERVICE_NAME: z.string().default('therapy-bot'),
   OTEL_SERVICE_VERSION: z.string().default('1.0.0'),
+  OTEL_CAPTURE_CONTENT: z.coerce.boolean().default(false),
   ENVIRONMENT: z.string().default('development'),
   LOG_LEVEL: z.string().default('info'),
 })
