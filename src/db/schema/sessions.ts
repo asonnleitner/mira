@@ -1,15 +1,13 @@
 import { bigint, index, integer, pgEnum, pgTable, timestamp, varchar } from 'drizzle-orm/pg-core'
 
-export const sessionTypeEnum = pgEnum('session_type', [
-  'individual',
-  'couples',
-])
+export const sessionTypeValues = ['individual', 'couples'] as const
+export type SessionType = (typeof sessionTypeValues)[number]
 
-export const sessionStatusEnum = pgEnum('session_status', [
-  'active',
-  'paused',
-  'closed',
-])
+export const sessionStatusValues = ['active', 'paused', 'closed'] as const
+export type SessionStatus = (typeof sessionStatusValues)[number]
+
+export const sessionTypeEnum = pgEnum('session_type', sessionTypeValues)
+export const sessionStatusEnum = pgEnum('session_status', sessionStatusValues)
 
 export const therapySessions = pgTable('therapy_sessions', {
   id: integer().primaryKey().generatedAlwaysAsIdentity(),

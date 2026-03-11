@@ -1,12 +1,6 @@
+import type { SoapNote } from '~/db/zod'
 import { mkdir } from 'node:fs/promises'
 import { dirname } from 'node:path'
-
-export interface SoapNote {
-  subjective: string[]
-  objective: string[]
-  assessment: string[]
-  plan: string[]
-}
 
 export async function writeSoapNote(
   filePath: string,

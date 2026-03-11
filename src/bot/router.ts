@@ -1,6 +1,7 @@
 import type { BotContext } from '~/bot/context'
+import type { SessionType } from '~/db/schema'
 
-export type ChatMode = 'individual' | 'couples'
+export type ChatMode = SessionType
 
 export function detectChatMode(ctx: BotContext): ChatMode {
   const chatType = ctx.chat?.type

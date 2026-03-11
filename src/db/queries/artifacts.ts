@@ -1,25 +1,10 @@
+import type { InsertArtifact } from '~/db/zod'
 import { and, desc, eq, ilike } from 'drizzle-orm'
-import { db } from '~/db'
-import { clinicalArtifacts } from '~/db/schema'
+import { db, tables } from '~/db'
 
-export async function saveArtifact(data: {
-  sessionId: number
-  patientId?: number
-  type:
-    | 'disclosure'
-    | 'insight'
-    | 'emotion'
-    | 'coping_strategy'
-    | 'trigger'
-    | 'goal'
-    | 'pattern'
-    | 'homework'
-  content: string
-  verbatimQuote?: string
-  clinicalRelevance?: number
-}) {
+export async function saveArtifact(data: Pick<InsertArtifact, 'sessionId' | 'patientId' | 'type' | 'content' | 'verbatimQuote' | 'clinicalRelevance'>) {
   const [artifact] = await db
-    .insert(clinicalArtifacts)
+    .insert(tables.clinicalArtifacts)
     .values(data)
     .returning()
   return artifact
@@ -28,28 +13,28 @@ export async function saveArtifact(data: {
 export async function getArtifactsByPatient(patientId: number) {
   return db
     .select()
-    .from(clinicalArtifacts)
-    .where(eq(clinicalArtifacts.patientId, patientId))
-    .orderBy(desc(clinicalArtifacts.createdAt))
+    .from(tables.clinicalArtifacts)
+    .where(eq(tables.clinicalArtifacts.patientId, patientId))
+    .orderBy(desc(tables.clinicalArtifacts.createdAt))
 }
 
 export async function getArtifactsBySession(sessionId: number) {
   return db
     .select()
-    .from(clinicalArtifacts)
-    .where(eq(clinicalArtifacts.sessionId, sessionId))
-    .orderBy(desc(clinicalArtifacts.createdAt))
+    .from(tables.clinicalArtifacts)
+    .where(eq(tables.clinicalArtifacts.sessionId, sessionId))
+    .orderBy(desc(tables.clinicalArtifacts.createdAt))
 }
 
 export async function searchArtifacts(patientId: number, keyword: string) {
   return db
     .select()
-    .from(clinicalArtifacts)
+    .from(tables.clinicalArtifacts)
     .where(
       and(
-        eq(clinicalArtifacts.patientId, patientId),
-        ilike(clinicalArtifacts.content, `%${keyword}%`),
+        eq(tables.clinicalArtifacts.patientId, patientId),
+        ilike(tables.clinicalArtifacts.content, `%${keyword}%`),
       ),
     )
-    .orderBy(desc(clinicalArtifacts.clinicalRelevance))
+    .orderBy(desc(tables.clinicalArtifacts.clinicalRelevance))
 }

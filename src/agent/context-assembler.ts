@@ -1,4 +1,5 @@
 import type { PromptContext } from '~/agent/system-prompt'
+import type { SessionType } from '~/db/schema'
 import { join } from 'node:path'
 import { buildSystemPrompt } from '~/agent/system-prompt'
 import { config } from '~/config'
@@ -7,7 +8,7 @@ import { readProfile } from '~/storage/profile'
 
 export interface SessionContext {
   sessionId: number
-  sessionType: 'individual' | 'couples'
+  sessionType: SessionType
   chatId: number
   patientId: number
   telegramId: number

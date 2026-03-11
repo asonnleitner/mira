@@ -14,11 +14,10 @@ export async function handleStart(ctx: BotContext): Promise<void> {
 
   ctx.session.patientId = patient.id
 
-  const lang = (patient.profile as any)?.preferredLanguage
-  const msg
-    = lang === 'cs'
-      ? `Vitejte zpet, ${patient.firstName || ''}! Jsem tu pro vas. Napiste mi cokoliv, co mate na srdci.`
-      : `Welcome back, ${patient.firstName || ''}! I'm here for you. Write me anything that's on your mind.`
+  const lang = patient.profile?.preferredLanguage
+  const msg = lang === 'cs'
+    ? `Vitejte zpet, ${patient.firstName || ''}! Jsem tu pro vas. Napiste mi cokoliv, co mate na srdci.`
+    : `Welcome back, ${patient.firstName || ''}! I'm here for you. Write me anything that's on your mind.`
 
   await ctx.reply(msg)
 }
@@ -68,9 +67,7 @@ export async function handleResume(ctx: BotContext): Promise<void> {
   const paused = sessions.find(s => s.status === 'paused')
 
   if (!paused) {
-    await ctx.reply(
-      'No paused session found. Send a message to start a new one.',
-    )
+    await ctx.reply('No paused session found. Send a message to start a new one.')
     return
   }
 

@@ -1,54 +1,24 @@
-import type { PatientProfile } from '~/db/schema/patients'
-import { defineRelations } from 'drizzle-orm'
-import { artifactTypeEnum, clinicalArtifacts } from '~/db/schema/artifacts'
-import { grammySessions } from '~/db/schema/grammy-sessions'
-import { sessionMessages } from '~/db/schema/messages'
-import { patients } from '~/db/schema/patients'
-import { sessionStatusEnum, sessionTypeEnum, therapySessions } from '~/db/schema/sessions'
+import type { ArtifactType } from './artifacts'
+import type { PatientProfile } from './patients'
+import type { SessionStatus, SessionType } from './sessions'
+import { artifactTypeEnum, artifactTypeValues, clinicalArtifacts } from './artifacts'
+import { grammySessions } from './grammy-sessions'
+import { sessionMessages } from './messages'
+import { patients } from './patients'
+import { sessionStatusEnum, sessionStatusValues, sessionTypeEnum, sessionTypeValues, therapySessions } from './sessions'
 
-export type { PatientProfile }
+export type { ArtifactType, PatientProfile, SessionStatus, SessionType }
 
-export const schema = {
+export {
   artifactTypeEnum,
+  artifactTypeValues,
   clinicalArtifacts,
   grammySessions,
   patients,
   sessionMessages,
   sessionStatusEnum,
+  sessionStatusValues,
   sessionTypeEnum,
+  sessionTypeValues,
   therapySessions,
 }
-
-export const relations = defineRelations(
-  { patients, therapySessions, sessionMessages, clinicalArtifacts },
-  ({ one, many, patients, therapySessions, sessionMessages, clinicalArtifacts }) => ({
-    patients: {
-      messages: many.sessionMessages(),
-      artifacts: many.clinicalArtifacts(),
-    },
-    therapySessions: {
-      messages: many.sessionMessages(),
-      artifacts: many.clinicalArtifacts(),
-    },
-    sessionMessages: {
-      session: one.therapySessions({
-        from: sessionMessages.sessionId,
-        to: therapySessions.id,
-      }),
-      patient: one.patients({
-        from: sessionMessages.patientId,
-        to: patients.id,
-      }),
-    },
-    clinicalArtifacts: {
-      session: one.therapySessions({
-        from: clinicalArtifacts.sessionId,
-        to: therapySessions.id,
-      }),
-      patient: one.patients({
-        from: clinicalArtifacts.patientId,
-        to: patients.id,
-      }),
-    },
-  }),
-)

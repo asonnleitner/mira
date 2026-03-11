@@ -1,6 +1,6 @@
 import { index, integer, pgTable, text, timestamp, varchar } from 'drizzle-orm/pg-core'
-import { patients } from '~/db/schema/patients'
-import { therapySessions } from '~/db/schema/sessions'
+import { patients } from './patients'
+import { therapySessions } from './sessions'
 
 export const sessionMessages = pgTable('session_messages', {
   id: integer().primaryKey().generatedAlwaysAsIdentity(),

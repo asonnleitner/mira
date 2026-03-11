@@ -1,9 +1,9 @@
-import type { BotContext } from '~/bot/context'
+import type { BotContext } from './context'
 import { Bot, session } from 'grammy'
-import { handleHistory, handlePause, handleResume, handleStart, handleStatus } from '~/bot/handlers/commands'
-import { handleMessage } from '~/bot/handlers/message'
-import { sessionConfig } from '~/bot/session'
 import { config } from '~/config'
+import { handleHistory, handlePause, handleResume, handleStart, handleStatus } from './handlers/commands'
+import { handleMessage } from './handlers/message'
+import { sessionConfig } from './session'
 
 export function createBot(): Bot<BotContext> {
   const bot = new Bot<BotContext>(config.BOT_TOKEN)

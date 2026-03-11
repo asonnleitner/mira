@@ -3,6 +3,7 @@ import { createSdkMcpServer, tool } from '@anthropic-ai/claude-agent-sdk'
 import * as z from 'zod'
 import { saveArtifact, searchArtifacts } from '~/db/queries/artifacts'
 import { updatePatientProfile } from '~/db/queries/patients'
+import { artifactTypeValues } from '~/db/schema'
 import { writeProfile } from '~/storage/profile'
 import { readTranscript } from '~/storage/transcript'
 
@@ -23,16 +24,7 @@ export function createTherapyTools(ctx: ToolContext) {
         'save_session_note',
         'Save an important clinical observation or note about this session. Use when the patient shares something significant, you identify a pattern, or want to record a therapeutic moment.',
         {
-          type: z.enum([
-            'disclosure',
-            'insight',
-            'emotion',
-            'coping_strategy',
-            'trigger',
-            'goal',
-            'pattern',
-            'homework',
-          ]),
+          type: z.enum(artifactTypeValues),
           content: z
             .string()
             .describe('Description of the clinical observation'),

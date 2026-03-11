@@ -5,22 +5,15 @@ import { query } from '@anthropic-ai/claude-agent-sdk'
 import * as z from 'zod'
 import { saveArtifact } from '~/db/queries/artifacts'
 import { updatePatientProfile } from '~/db/queries/patients'
+import { artifactTypeValues } from '~/db/schema'
+import { soapSchema } from '~/db/zod'
 import { readProfile, writeProfile } from '~/storage/profile'
 import { writeSoapNote } from '~/storage/soap-notes'
 
 const ArtifactSchema = z.object({
   artifacts: z.array(
     z.object({
-      type: z.enum([
-        'disclosure',
-        'insight',
-        'emotion',
-        'coping_strategy',
-        'trigger',
-        'goal',
-        'pattern',
-        'homework',
-      ]),
+      type: z.enum(artifactTypeValues),
       content: z.string(),
       verbatimQuote: z.string().optional(),
       clinicalRelevance: z.number().min(1).max(10),
@@ -33,13 +26,6 @@ const ArtifactSchema = z.object({
     riskLevelChange: z.enum(['none', 'increased', 'decreased']).optional(),
   }),
   shouldGenerateSoapNote: z.boolean(),
-})
-
-const SoapSchema = z.object({
-  subjective: z.array(z.string()),
-  objective: z.array(z.string()),
-  assessment: z.array(z.string()),
-  plan: z.array(z.string()),
 })
 
 export async function extractArtifacts(
@@ -194,7 +180,7 @@ Provide a structured SOAP note based on the therapy session.`
         persistSession: false,
         outputFormat: {
           type: 'json_schema',
-          schema: z.toJSONSchema(SoapSchema),
+          schema: z.toJSONSchema(soapSchema),
         },
       },
     })
@@ -208,7 +194,7 @@ Provide a structured SOAP note based on the therapy session.`
     if (!result)
       return
 
-    const parsed = SoapSchema.safeParse(result)
+    const parsed = soapSchema.safeParse(result)
     if (!parsed.success)
       return
 

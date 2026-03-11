@@ -1,24 +1,30 @@
 import { bigint, boolean, integer, jsonb, pgTable, timestamp, varchar } from 'drizzle-orm/pg-core'
+import * as z from 'zod'
 
-export interface PatientProfile {
-  fullName?: string
-  age?: number
-  gender?: string
-  occupation?: string
-  relationshipStatus?: string
-  therapyGoals?: string[]
-  previousTherapyExperience?: string
-  preferredLanguage?: 'en' | 'cs'
-  attachmentStyle?: string
-  recurringThemes?: Array<{
-    theme: string
-    frequency: number
-    trend: string
-  }>
-  copingPatterns?: string[]
-  triggers?: string[]
-  progressNotes?: Array<{ date: string, note: string }>
-}
+export const patientProfileSchema = z.object({
+  fullName: z.string().optional(),
+  age: z.number().optional(),
+  gender: z.string().optional(),
+  occupation: z.string().optional(),
+  relationshipStatus: z.string().optional(),
+  therapyGoals: z.array(z.string()).optional(),
+  previousTherapyExperience: z.string().optional(),
+  preferredLanguage: z.enum(['en', 'cs']).optional(),
+  attachmentStyle: z.string().optional(),
+  recurringThemes: z.array(z.object({
+    theme: z.string(),
+    frequency: z.number(),
+    trend: z.string(),
+  })).optional(),
+  copingPatterns: z.array(z.string()).optional(),
+  triggers: z.array(z.string()).optional(),
+  progressNotes: z.array(z.object({
+    date: z.string(),
+    note: z.string(),
+  })).optional(),
+})
+
+export type PatientProfile = z.infer<typeof patientProfileSchema>
 
 export const patients = pgTable('patients', {
   id: integer().primaryKey().generatedAlwaysAsIdentity(),

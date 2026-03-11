@@ -1,5 +1,7 @@
+import type { SessionType } from '~/db/schema'
+
 export interface PromptContext {
-  sessionType: 'individual' | 'couples'
+  sessionType: SessionType
   patientProfile?: string // PROFILE.md content
   relationshipProfile?: string // RELATIONSHIP.md content (couples)
   previousSoapNote?: string // Last session's SOAP note

@@ -1,8 +1,8 @@
 import { index, integer, pgEnum, pgTable, text, timestamp } from 'drizzle-orm/pg-core'
-import { patients } from '~/db/schema/patients'
-import { therapySessions } from '~/db/schema/sessions'
+import { patients } from './patients'
+import { therapySessions } from './sessions'
 
-export const artifactTypeEnum = pgEnum('artifact_type', [
+export const artifactTypeValues = [
   'disclosure',
   'insight',
   'emotion',
@@ -11,15 +11,17 @@ export const artifactTypeEnum = pgEnum('artifact_type', [
   'goal',
   'pattern',
   'homework',
-])
+] as const
+
+export type ArtifactType = (typeof artifactTypeValues)[number]
+
+export const artifactTypeEnum = pgEnum('artifact_type', artifactTypeValues)
 
 export const clinicalArtifacts = pgTable(
   'clinical_artifacts',
   {
     id: integer().primaryKey().generatedAlwaysAsIdentity(),
-    sessionId: integer('session_id')
-      .notNull()
-      .references(() => therapySessions.id),
+    sessionId: integer('session_id').notNull().references(() => therapySessions.id),
     patientId: integer('patient_id').references(() => patients.id),
     type: artifactTypeEnum().notNull(),
     content: text().notNull(),

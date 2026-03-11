@@ -1,13 +1,12 @@
 import type { PatientProfile } from '~/db/schema'
 import { eq } from 'drizzle-orm'
-import { db } from '~/db'
-import { patients } from '~/db/schema'
+import { db, tables } from '~/db'
 
 export async function findPatientByTelegramId(telegramId: number) {
   const rows = await db
     .select()
-    .from(patients)
-    .where(eq(patients.telegramId, telegramId))
+    .from(tables.patients)
+    .where(eq(tables.patients.telegramId, telegramId))
     .limit(1)
   return rows[0] ?? null
 }
@@ -17,7 +16,7 @@ export async function createPatient(data: {
   firstName?: string
   username?: string
 }) {
-  const [patient] = await db.insert(patients).values(data).returning()
+  const [patient] = await db.insert(tables.patients).values(data).returning()
   return patient
 }
 
@@ -31,9 +30,9 @@ export async function updatePatientProfile(
 
   const merged = { ...(existing.profile ?? {}), ...profile }
   const [updated] = await db
-    .update(patients)
+    .update(tables.patients)
     .set({ profile: merged, updatedAt: new Date() })
-    .where(eq(patients.telegramId, telegramId))
+    .where(eq(tables.patients.telegramId, telegramId))
     .returning()
   return updated
 }
@@ -43,7 +42,7 @@ export async function completeOnboarding(
   profile: PatientProfile,
 ) {
   const [updated] = await db
-    .update(patients)
+    .update(tables.patients)
     .set({
       onboardingComplete: true,
       firstName: profile.fullName,
@@ -51,7 +50,7 @@ export async function completeOnboarding(
       profile,
       updatedAt: new Date(),
     })
-    .where(eq(patients.telegramId, telegramId))
+    .where(eq(tables.patients.telegramId, telegramId))
     .returning()
   return updated
 }
