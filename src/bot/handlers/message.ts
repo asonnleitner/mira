@@ -43,6 +43,16 @@ export async function handleMessage(ctx: BotContext): Promise<void> {
   if (!text)
     return
 
+  // In groups, only respond when the bot is explicitly mentioned or replied to
+  const chatType = ctx.chat?.type
+  if (chatType === 'group' || chatType === 'supergroup') {
+    const botMentioned = ctx.message?.text?.includes(`@${ctx.me.username}`)
+    const isReplyToBot = ctx.message?.reply_to_message?.from?.id === ctx.me.id
+    if (!botMentioned && !isReplyToBot) {
+      return
+    }
+  }
+
   // Check onboarding state
   if (isOnboarding(telegramId)) {
     await handleOnboardingMessage(ctx)
@@ -157,7 +167,10 @@ function bufferMessage(ctx: BotContext, chatId: number, chatMode: SessionType, m
       if (ac.signal.aborted)
         return
 
-      logger.error('Error processing therapy message:', err)
+      logger.error(`[message] Error processing therapy message for chat ${chatId}:`, err)
+      // Notify user that something went wrong
+      ctx.api.sendMessage(chatId, 'Sorry, something went wrong. Please try again.')
+        .catch(() => {})
       chatBuffer.delete(chatId)
     }
   })()
@@ -313,7 +326,13 @@ async function processTherapyMessage(
     if (signal.aborted)
       throw new DOMException('Aborted', 'AbortError')
 
+    // Warn if agent returned an empty response
+    if (!response) {
+      logger.warn(`[message] Empty response from agent for chat ${chatId}`)
+    }
+
     // Send response to Telegram
+    logger.info(`[message] Sending response to chat ${chatId} (${response.length} chars)`)
     await sendMarkdownV2({ chatId, text: response, api: ctx.api })
 
     // Append therapist response to transcript and DB

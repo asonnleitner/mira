@@ -6,6 +6,7 @@ import { ATTR_BOT_COMMAND } from '~/constants'
 import { findOrCreatePreference } from '~/db/queries/check-in'
 import { findPatientByTelegramId } from '~/db/queries/patients'
 import { findActiveSession, getSessionCount, updateSessionStatus } from '~/db/queries/sessions'
+import { logger } from '~/telemetry/logger'
 import { withSpan } from '~/telemetry/tracing'
 
 function getLanguage(ctx: BotContext, patient?: { preferredLanguage?: string | null } | null): string {
@@ -30,6 +31,7 @@ export async function handleStart(ctx: BotContext): Promise<void> {
       language: getLanguage(ctx, patient),
     })
 
+    logger.info(`[start] Generated welcome message for ${telegramId} (${msg.length} chars)`)
     await replyMarkdownV2(ctx, msg)
   })
 }

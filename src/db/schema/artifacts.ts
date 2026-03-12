@@ -12,6 +12,8 @@ export const artifactTypeValues = [
   'goal',
   'pattern',
   'homework',
+  'risk_factor',
+  'strength',
 ] as const
 
 export type ArtifactType = (typeof artifactTypeValues)[number]

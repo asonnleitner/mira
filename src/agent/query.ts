@@ -104,6 +104,11 @@ export async function tracedQuery(
       }
     }
 
+    if (!result.resultMessage) {
+      logger.warn(`[${label}] Agent query completed without a result message`)
+      span.addEvent('sdk.no_result')
+    }
+
     const msg = result.resultMessage
     setGenAiResult(span, {
       outputMessages: [{ role: 'assistant', content: result.response || JSON.stringify(result.structuredOutput) }],

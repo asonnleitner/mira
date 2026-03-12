@@ -28,6 +28,14 @@ export function createBot(): Bot<BotContext> {
   bot.command('history', handleHistory)
   bot.command('checkin', handleCheckIn)
 
+  // Log when bot is added to or removed from groups
+  bot.on('my_chat_member', (ctx) => {
+    const chat = ctx.myChatMember.chat
+    const newStatus = ctx.myChatMember.new_chat_member.status
+    const oldStatus = ctx.myChatMember.old_chat_member.status
+    logger.info(`[bot] Chat member status changed in ${chat.type} ${chat.id}: ${oldStatus} → ${newStatus}`)
+  })
+
   // Text messages → therapy handler
   bot.on('message:text', handleMessage)
 
