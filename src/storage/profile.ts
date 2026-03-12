@@ -1,4 +1,4 @@
-import type { PatientProfile } from '~/db/schema'
+import type { PatientProfile } from '~/db/schema/patients'
 import { mkdir } from 'node:fs/promises'
 import { dirname } from 'node:path'
 

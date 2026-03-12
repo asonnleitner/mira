@@ -1,7 +1,8 @@
 import type { Attributes, Link, Span } from '@opentelemetry/api'
 import type { AnthropicModel } from '~/constants'
 import { SpanKind, SpanStatusCode, trace } from '@opentelemetry/api'
-import { ATTR_GEN_AI_INPUT_MESSAGES, ATTR_GEN_AI_OPERATION_NAME, ATTR_GEN_AI_OUTPUT_MESSAGES, ATTR_GEN_AI_PROVIDER_NAME, ATTR_GEN_AI_REQUEST_MODEL, ATTR_GEN_AI_RESPONSE_MODEL, ATTR_GEN_AI_SYSTEM_INSTRUCTIONS, ATTR_GEN_AI_TOOL_DEFINITIONS, ATTR_GEN_AI_USAGE_CACHE_CREATION_INPUT_TOKENS, ATTR_GEN_AI_USAGE_CACHE_READ_INPUT_TOKENS, ATTR_GEN_AI_USAGE_INPUT_TOKENS, ATTR_GEN_AI_USAGE_OUTPUT_TOKENS, GEN_AI_PROVIDER_NAME_VALUE_ANTHROPIC } from '@opentelemetry/semantic-conventions/incubating'
+import { ATTR_DB_COLLECTION_NAME, ATTR_DB_NAMESPACE, ATTR_DB_OPERATION_NAME, ATTR_DB_QUERY_SUMMARY, ATTR_DB_QUERY_TEXT, ATTR_DB_SYSTEM_NAME, ATTR_ERROR_TYPE } from '@opentelemetry/semantic-conventions'
+import { ATTR_GEN_AI_INPUT_MESSAGES, ATTR_GEN_AI_OPERATION_NAME, ATTR_GEN_AI_OUTPUT_MESSAGES, ATTR_GEN_AI_PROVIDER_NAME, ATTR_GEN_AI_REQUEST_MODEL, ATTR_GEN_AI_RESPONSE_MODEL, ATTR_GEN_AI_SYSTEM_INSTRUCTIONS, ATTR_GEN_AI_TOOL_DEFINITIONS, ATTR_GEN_AI_USAGE_CACHE_CREATION_INPUT_TOKENS, ATTR_GEN_AI_USAGE_CACHE_READ_INPUT_TOKENS, ATTR_GEN_AI_USAGE_INPUT_TOKENS, ATTR_GEN_AI_USAGE_OUTPUT_TOKENS, DB_SYSTEM_NAME_VALUE_SQLITE, GEN_AI_PROVIDER_NAME_VALUE_ANTHROPIC } from '@opentelemetry/semantic-conventions/incubating'
 import { config } from '~/config'
 
 const tracer = trace.getTracer('therapy-bot')
@@ -131,4 +132,60 @@ export function setGenAiResult(span: Span, data: {
   if (captureContent && data.outputMessages) {
     span.setAttribute(ATTR_GEN_AI_OUTPUT_MESSAGES, JSON.stringify(data.outputMessages))
   }
+}
+
+function parseSql(sql: string): { operation: string, collection: string } {
+  const operation = sql.match(/^\s*(\w+)/i)?.[1]?.toUpperCase() ?? 'UNKNOWN'
+  let collection: string | undefined
+  if (operation === 'INSERT')
+    collection = sql.match(/into\s+"?(\w+)"?/i)?.[1]
+  else if (operation === 'UPDATE')
+    collection = sql.match(/update\s+"?(\w+)"?/i)?.[1]
+  else
+    collection = sql.match(/from\s+"?(\w+)"?/i)?.[1]
+  return { operation, collection: collection ?? 'unknown' }
+}
+
+interface DrizzleQuery<T> {
+  toSQL: () => { sql: string, params: unknown[] }
+  then: PromiseLike<T>['then']
+}
+
+export async function withDbSpan<T>(
+  query: DrizzleQuery<T>,
+): Promise<T> {
+  const { sql: queryText } = query.toSQL()
+  const { operation, collection } = parseSql(queryText)
+  const spanName = `${operation} ${collection}`
+
+  const attrs: Attributes = {
+    [ATTR_DB_SYSTEM_NAME]: DB_SYSTEM_NAME_VALUE_SQLITE,
+    [ATTR_DB_OPERATION_NAME]: operation,
+    [ATTR_DB_COLLECTION_NAME]: collection,
+    [ATTR_DB_NAMESPACE]: config.DATABASE_URL,
+    [ATTR_DB_QUERY_SUMMARY]: spanName,
+  }
+  if (captureContent) {
+    attrs[ATTR_DB_QUERY_TEXT] = queryText
+  }
+
+  return tracer.startActiveSpan(spanName, {
+    kind: SpanKind.CLIENT,
+    attributes: attrs,
+  }, async (span) => {
+    try {
+      const result = await (query as PromiseLike<T>)
+      span.setStatus({ code: SpanStatusCode.OK })
+      return result
+    }
+    catch (err) {
+      span.setStatus({ code: SpanStatusCode.ERROR, message: String(err) })
+      span.setAttribute(ATTR_ERROR_TYPE, (err as Error).constructor?.name ?? 'Error')
+      span.recordException(err as Error)
+      throw err
+    }
+    finally {
+      span.end()
+    }
+  })
 }

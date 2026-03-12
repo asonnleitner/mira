@@ -11,18 +11,6 @@ export const PatientProfileSchema = z.object({
   therapyGoals: z.array(z.string()).optional(),
   previousTherapyExperience: z.string().optional(),
   preferredLanguage: z.string().optional(),
-  attachmentStyle: z.string().optional(),
-  recurringThemes: z.array(z.object({
-    theme: z.string(),
-    frequency: z.number(),
-    trend: z.string(),
-  })).optional(),
-  copingPatterns: z.array(z.string()).optional(),
-  triggers: z.array(z.string()).optional(),
-  progressNotes: z.array(z.object({
-    date: z.string(),
-    note: z.string(),
-  })).optional(),
 })
 
 export type PatientProfile = z.infer<typeof PatientProfileSchema>
@@ -36,7 +24,6 @@ export const patients = sqliteTable('patients', {
   gender: text({ length: 64 }),
   preferredLanguage: text('preferred_language', { length: 10 }),
   onboardingComplete: integer({ mode: 'boolean' }).default(false).notNull(),
-  profile: text('profile', { mode: 'json' }).$type<PatientProfile>().default({}),
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
   updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
 })

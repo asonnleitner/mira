@@ -1,5 +1,5 @@
 import type { BotContext } from '~/bot/context'
-import type { PatientProfile } from '~/db/schema'
+import type { PatientProfile } from '~/db/schema/patients'
 import { join } from 'node:path'
 import { createSdkMcpServer, tool } from '@anthropic-ai/claude-agent-sdk'
 import { ATTR_GEN_AI_AGENT_NAME, ATTR_GEN_AI_CONVERSATION_ID, GEN_AI_OPERATION_NAME_VALUE_INVOKE_AGENT } from '@opentelemetry/semantic-conventions/incubating'
