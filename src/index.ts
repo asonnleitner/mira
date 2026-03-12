@@ -3,7 +3,7 @@ import { sdk } from '~/telemetry/config'
 import process from 'node:process'
 import { logger } from '~/telemetry/logger'
 import { createBot } from './bot/bot'
-import { startHealthServer } from './health'
+import { setBotReady, startHealthServer } from './health'
 import { startCheckInScheduler, stopCheckInScheduler } from './scheduler/check-in'
 
 const bot = createBot()
@@ -16,8 +16,16 @@ async function main() {
     healthServer = startHealthServer()
     logger.info(`Health server listening on port ${healthServer.port}`)
 
+    logger.info('Connecting to Telegram...')
+
+    const connectionTimeout = setTimeout(() => {
+      logger.warn('Bot has not connected to Telegram after 30s — check network, DNS, TLS, and BOT_TOKEN')
+    }, 30_000)
+
     await bot.start({
       onStart: (botInfo) => {
+        clearTimeout(connectionTimeout)
+        setBotReady(true)
         logger.info(`Bot @${botInfo.username} started!`)
         checkInTimer = startCheckInScheduler(bot.api)
       },

@@ -31,6 +31,17 @@ export function createBot(): Bot<BotContext> {
   // Text messages → therapy handler
   bot.on('message:text', handleMessage)
 
+  // API transformer to log transport/network errors (including polling failures)
+  bot.api.config.use(async (prev, method, payload, signal) => {
+    try {
+      return await prev(method, payload, signal)
+    }
+    catch (err) {
+      logger.error(`Telegram API call "${method}" failed:`, err)
+      throw err
+    }
+  })
+
   // Error handler
   bot.catch((err) => {
     logger.error('Bot error:', err)
