@@ -1,5 +1,5 @@
 import { sql } from 'drizzle-orm'
-import { index, integer, sqliteTable, text } from 'drizzle-orm/sqlite-core'
+import { index, integer, sqliteTable, text, uniqueIndex } from 'drizzle-orm/sqlite-core'
 
 export const sessionTypeValues = ['individual', 'couples'] as const
 export type SessionType = (typeof sessionTypeValues)[number]
@@ -19,6 +19,6 @@ export const therapySessions = sqliteTable('therapy_sessions', {
   transcriptPath: text('transcript_path', { length: 512 }).notNull(),
   soapNotePath: text('soap_note_path', { length: 512 }),
 }, table => [
-  index('sessions_chat_id_idx').on(table.chatId),
-  index('sessions_status_idx').on(table.status),
+  index('sessions_chat_id_status_started_at_idx').on(table.chatId, table.status, table.startedAt),
+  uniqueIndex('sessions_sdk_session_id_idx').on(table.sdkSessionId),
 ])

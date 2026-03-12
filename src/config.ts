@@ -10,6 +10,7 @@ const envSchema = z.object({
   OTEL_SERVICE_VERSION: z.string().default('1.0.0'),
   OTEL_CAPTURE_CONTENT: z.coerce.boolean().default(false),
   OTEL_EXPORTER_OTLP_ENDPOINT: z.string().optional(),
+  OTEL_EXPORTER_OTLP_HEADERS: z.string().optional(),
   ENVIRONMENT: z.string().default('development'),
   LOG_LEVEL: z.string().default('info'),
   PORT: z.coerce.number().default(3000),

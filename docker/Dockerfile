@@ -21,6 +21,8 @@ FROM base AS final
 COPY --from=deps /app/node_modules ./node_modules
 COPY package.json tsconfig.json drizzle.config.ts ./
 COPY src ./src
+COPY drizzle ./drizzle
+COPY docker/entrypoint.sh ./entrypoint.sh
 
 RUN mkdir -p /app/data /app/db /home/bun/.claude \
      && chown -R 1000:1000 /app
@@ -32,5 +34,5 @@ USER bun
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
   CMD curl -f http://localhost:3000/health || exit 1
 
-ENTRYPOINT ["tini", "--"]
+ENTRYPOINT ["tini", "--", "./entrypoint.sh"]
 CMD ["bun", "run", "src/index.ts"]

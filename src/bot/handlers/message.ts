@@ -5,6 +5,7 @@ import type { SessionType } from '~/db/schema'
 import { join } from 'node:path'
 import { runNoteTaker } from '~/agent/artifact-extractor'
 import { continueTherapySession, StaleSessionError, startTherapySession } from '~/agent/therapist'
+import { handleCouplesOnboardingMessage, isCouplesOnboarding, startCouplesOnboarding } from '~/bot/handlers/couples-onboarding'
 import { handleOnboardingMessage, isOnboarding, startOnboarding } from '~/bot/handlers/onboarding'
 import { detectChatMode } from '~/bot/router'
 import { sendMarkdownV2 } from '~/bot/utils/telegram-send'
@@ -66,6 +67,22 @@ export async function handleMessage(ctx: BotContext): Promise<void> {
   ctx.session.patientId = patient.id
 
   const chatMode = detectChatMode(ctx)
+
+  // Couples onboarding gate: check before message buffering
+  if (chatMode === 'couples') {
+    if (isCouplesOnboarding(chatId)) {
+      await handleCouplesOnboardingMessage(ctx)
+      return
+    }
+
+    const relationshipPath = join(config.DATA_DIR, 'couples', String(chatId), 'RELATIONSHIP.md')
+    const relationshipExists = await Bun.file(relationshipPath).exists()
+
+    if (!relationshipExists) {
+      await startCouplesOnboarding(ctx)
+      return
+    }
+  }
 
   const messageEntry: MessageEntry = {
     text,
@@ -232,12 +249,9 @@ async function processTherapyMessage(
       throw new DOMException('Aborted', 'AbortError')
 
     // Build session context
-    const profilePath = join(
-      config.DATA_DIR,
-      'patients',
-      String(telegramId),
-      'PROFILE.md',
-    )
+    const profilePath = chatMode === 'individual'
+      ? join(config.DATA_DIR, 'patients', String(telegramId), 'PROFILE.md')
+      : join(config.DATA_DIR, 'couples', String(chatId), 'RELATIONSHIP.md')
 
     // Resolve preferred language from patient record
     const patient = await findPatientByTelegramId(telegramId)

@@ -1,5 +1,5 @@
 import { sql } from 'drizzle-orm'
-import { integer, sqliteTable, text } from 'drizzle-orm/sqlite-core'
+import { integer, sqliteTable, text, uniqueIndex } from 'drizzle-orm/sqlite-core'
 import * as z from 'zod'
 
 export const PatientProfileSchema = z.object({
@@ -17,7 +17,7 @@ export type PatientProfile = z.infer<typeof PatientProfileSchema>
 
 export const patients = sqliteTable('patients', {
   id: integer().primaryKey({ autoIncrement: true }),
-  telegramId: integer('telegram_id').notNull().unique(),
+  telegramId: integer('telegram_id').notNull(),
   firstName: text('first_name', { length: 256 }),
   username: text({ length: 256 }),
   dateOfBirth: text('date_of_birth', { length: 10 }),
@@ -26,4 +26,6 @@ export const patients = sqliteTable('patients', {
   onboardingComplete: integer({ mode: 'boolean' }).default(false).notNull(),
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
   updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
-})
+}, table => [
+  uniqueIndex('patients_telegram_id_idx').on(table.telegramId),
+])

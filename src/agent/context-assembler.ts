@@ -1,8 +1,6 @@
 import type { PromptContext } from '~/agent/system-prompt'
 import type { SessionType } from '~/db/schema'
-import { join } from 'node:path'
 import { buildSystemPrompt } from '~/agent/system-prompt'
-import { config } from '~/config'
 import { getArtifactsByPatient } from '~/db/queries/artifacts'
 import { readProfile } from '~/storage/profile'
 
@@ -28,20 +26,19 @@ export async function assembleSystemPrompt(
     preferredLanguage: ctx.preferredLanguage,
   }
 
-  // Load patient profile
-  const profileContent = await readProfile(ctx.profilePath)
-
-  if (profileContent) {
-    promptCtx.patientProfile = profileContent
-  }
-
-  // Load relationship profile for couples
+  // Load profile based on session type
   if (ctx.sessionType === 'couples') {
-    const relationshipPath = join(config.DATA_DIR, 'couples', ctx.chatId.toString(), 'RELATIONSHIP.md')
-    const relContent = await readProfile(relationshipPath)
-
+    // Only load relationship profile — individual profiles are private
+    const relContent = await readProfile(ctx.profilePath)
     if (relContent) {
       promptCtx.relationshipProfile = relContent
+    }
+  }
+  else {
+    // Load individual patient profile
+    const profileContent = await readProfile(ctx.profilePath)
+    if (profileContent) {
+      promptCtx.patientProfile = profileContent
     }
   }
 

@@ -4,6 +4,7 @@ import { createSdkMcpServer, tool } from '@anthropic-ai/claude-agent-sdk'
 import { ATTR_GEN_AI_AGENT_NAME, GEN_AI_OPERATION_NAME_VALUE_INVOKE_AGENT } from '@opentelemetry/semantic-conventions/incubating'
 import * as z from 'zod'
 import { auditToolUse, createFileSecurityHook } from '~/agent/hooks'
+import { createMcpTracingHooks } from '~/agent/mcp-tracing'
 import { tracedQuery } from '~/agent/query'
 import { ANTHROPIC_MODEL_CLAUDE_SONNET, ATTR_BOT_SESSION_ID } from '~/constants'
 import { saveArtifact } from '~/db/queries/artifacts'
@@ -72,18 +73,25 @@ function createNoteTakerTools(ctx: SessionContext) {
   })
 }
 
-function createNoteTakerHooks(dataDir: string, telegramId: number) {
-  const allowedBase = resolve(dataDir, 'patients', String(telegramId))
+function createNoteTakerHooks(dataDir: string, ctx: SessionContext) {
+  const allowedBase = ctx.sessionType === 'individual'
+    ? resolve(dataDir, 'patients', String(ctx.telegramId))
+    : resolve(dataDir, 'couples', String(ctx.chatId))
+
+  const mcpTracing = createMcpTracingHooks()
 
   return {
-    PreToolUse: [{
-      matcher: '^(Read|Write)$',
-      hooks: [createFileSecurityHook(allowedBase, dataDir)],
-    }],
-    PostToolUse: [{
-      matcher: '^(mcp__note-taker-tools__|Read|Write)',
-      hooks: [auditToolUse],
-    }],
+    PreToolUse: [
+      { matcher: '^(Read|Write)$', hooks: [createFileSecurityHook(allowedBase, dataDir)] },
+      { matcher: '^mcp__', hooks: [mcpTracing.preToolUse] },
+    ],
+    PostToolUse: [
+      { matcher: '^(mcp__note-taker-tools__|Read|Write)', hooks: [auditToolUse] },
+      { matcher: '^mcp__', hooks: [mcpTracing.postToolUse] },
+    ],
+    PostToolUseFailure: [
+      { matcher: '^mcp__', hooks: [mcpTracing.postToolUseFailure] },
+    ],
   }
 }
 
@@ -92,7 +100,9 @@ function buildNoteTakerPrompt(
   therapistResponse: string,
   ctx: SessionContext,
 ): string {
-  const profilePath = `patients/${ctx.telegramId}/PROFILE.md`
+  const profilePath = ctx.sessionType === 'individual'
+    ? `patients/${ctx.telegramId}/PROFILE.md`
+    : `couples/${ctx.chatId}/RELATIONSHIP.md`
 
   return `Review this therapy exchange and update clinical documentation as needed.
 
@@ -119,7 +129,7 @@ export async function runNoteTaker(
 ): Promise<void> {
   try {
     const mcpTools = createNoteTakerTools(ctx)
-    const hooks = createNoteTakerHooks(ctx.dataDir, ctx.telegramId)
+    const hooks = createNoteTakerHooks(ctx.dataDir, ctx)
 
     await tracedQuery(
       {

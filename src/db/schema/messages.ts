@@ -11,6 +11,5 @@ export const sessionMessages = sqliteTable('session_messages', {
   content: text().notNull(),
   timestamp: integer('created_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
 }, table => [
-  index('messages_session_id_idx').on(table.sessionId),
-  index('messages_timestamp_idx').on(table.timestamp),
+  index('messages_session_id_timestamp_idx').on(table.sessionId, table.timestamp),
 ])

@@ -5,7 +5,7 @@ import { ATTR_DB_COLLECTION_NAME, ATTR_DB_NAMESPACE, ATTR_DB_OPERATION_NAME, ATT
 import { ATTR_GEN_AI_INPUT_MESSAGES, ATTR_GEN_AI_OPERATION_NAME, ATTR_GEN_AI_OUTPUT_MESSAGES, ATTR_GEN_AI_PROVIDER_NAME, ATTR_GEN_AI_REQUEST_MODEL, ATTR_GEN_AI_RESPONSE_MODEL, ATTR_GEN_AI_SYSTEM_INSTRUCTIONS, ATTR_GEN_AI_TOOL_DEFINITIONS, ATTR_GEN_AI_USAGE_CACHE_CREATION_INPUT_TOKENS, ATTR_GEN_AI_USAGE_CACHE_READ_INPUT_TOKENS, ATTR_GEN_AI_USAGE_INPUT_TOKENS, ATTR_GEN_AI_USAGE_OUTPUT_TOKENS, DB_SYSTEM_NAME_VALUE_SQLITE, GEN_AI_PROVIDER_NAME_VALUE_ANTHROPIC } from '@opentelemetry/semantic-conventions/incubating'
 import { config } from '~/config'
 
-const tracer = trace.getTracer('therapy-bot')
+const tracer = trace.getTracer('mira')
 
 export async function withSpan<T>(
   name: string,
@@ -134,15 +134,20 @@ export function setGenAiResult(span: Span, data: {
   }
 }
 
+const RE_OPERATION = /^\s*(\w+)/
+const RE_INTO = /into\s+"?(\w+)"?/i
+const RE_UPDATE = /update\s+"?(\w+)"?/i
+const RE_FROM = /from\s+"?(\w+)"?/i
+
 function parseSql(sql: string): { operation: string, collection: string } {
-  const operation = sql.match(/^\s*(\w+)/i)?.[1]?.toUpperCase() ?? 'UNKNOWN'
+  const operation = sql.match(RE_OPERATION)?.[1]?.toUpperCase() ?? 'UNKNOWN'
   let collection: string | undefined
   if (operation === 'INSERT')
-    collection = sql.match(/into\s+"?(\w+)"?/i)?.[1]
+    collection = sql.match(RE_INTO)?.[1]
   else if (operation === 'UPDATE')
-    collection = sql.match(/update\s+"?(\w+)"?/i)?.[1]
+    collection = sql.match(RE_UPDATE)?.[1]
   else
-    collection = sql.match(/from\s+"?(\w+)"?/i)?.[1]
+    collection = sql.match(RE_FROM)?.[1]
   return { operation, collection: collection ?? 'unknown' }
 }
 
@@ -165,6 +170,7 @@ export async function withDbSpan<T>(
     [ATTR_DB_NAMESPACE]: config.DATABASE_URL,
     [ATTR_DB_QUERY_SUMMARY]: spanName,
   }
+
   if (captureContent) {
     attrs[ATTR_DB_QUERY_TEXT] = queryText
   }
