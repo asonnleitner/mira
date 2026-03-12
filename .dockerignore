@@ -4,8 +4,8 @@ node_modules
 .env
 .env.local
 data/
-drizzle/
 docker/
+!docker/entrypoint.sh
 *.log
 .idea
 sqlite.db
