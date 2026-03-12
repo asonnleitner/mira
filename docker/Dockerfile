@@ -7,7 +7,7 @@ WORKDIR /app
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
     apt-get update && apt-get install -y --no-install-recommends \
-    curl tini su-exec \
+    curl tini gosu \
     && curl -fsSL https://claude.ai/install.sh | bash
 
 FROM base AS deps
