@@ -1,8 +1,8 @@
 import { defineRelations } from 'drizzle-orm'
-import { clinicalArtifacts, patients, sessionMessages, therapySessions } from '~/db/schema'
+import { checkInPreferences, clinicalArtifacts, patients, sessionMessages, therapySessions } from '~/db/schema'
 
 export const relations = defineRelations(
-  { patients, therapySessions, sessionMessages, clinicalArtifacts },
+  { patients, therapySessions, sessionMessages, clinicalArtifacts, checkInPreferences },
   ({ one, many, patients, therapySessions, sessionMessages, clinicalArtifacts }) => ({
     patients: {
       messages: many.sessionMessages(),
@@ -32,5 +32,6 @@ export const relations = defineRelations(
         to: patients.id,
       }),
     },
+    checkInPreferences: {},
   }),
 )

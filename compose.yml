@@ -20,6 +20,8 @@ services:
       - ./data/app/db:/app/db
       - ./data/home/bun/.claude:/home/bun/.claude
     depends_on:
+      init-permissions:
+        condition: service_completed_successfully
       jaeger:
         condition: service_started
     expose:
@@ -33,16 +35,21 @@ services:
       - /tmp:rw,noexec,nosuid,size=100m
     cap_drop:
       - ALL
-    cap_add:
-      - CHOWN
-      - SETUID
-      - SETGID
     security_opt:
       - no-new-privileges:true
     mem_limit: 2g
     cpus: 2
     pids_limit: 150
     ipc: private
+
+  init-permissions:
+    image: busybox:latest
+    volumes:
+      - ./data/app/data:/app/data
+      - ./data/app/db:/app/db
+      - ./data/home/bun/.claude:/home/bun/.claude
+    entrypoint: sh -c "chown -R 1000:1000 /app/data /app/db /home/bun/.claude"
+    restart: no
 
   jaeger:
     image: jaegertracing/jaeger:latest

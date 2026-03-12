@@ -11,6 +11,7 @@ import { detectChatMode } from '~/bot/router'
 import { sendMarkdownV2 } from '~/bot/utils/telegram-send'
 import { config } from '~/config'
 import { ATTR_BOT_CHAT_MODE, ATTR_BOT_MESSAGE_COUNT, ATTR_TELEGRAM_CHAT_ID } from '~/constants'
+import { resetUnansweredCount } from '~/db/queries/check-in'
 import { createPatient, findPatientByTelegramId } from '~/db/queries/patients'
 import { createSession, findActiveSession, saveMessage, updateSessionLastMessage, updateSessionSdkId } from '~/db/queries/sessions'
 import { appendMessage, createTranscript } from '~/storage/transcript'
@@ -83,6 +84,9 @@ export async function handleMessage(ctx: BotContext): Promise<void> {
       return
     }
   }
+
+  // Reset unanswered check-in count on any user message
+  resetUnansweredCount(chatId).catch(() => {})
 
   const messageEntry: MessageEntry = {
     text,

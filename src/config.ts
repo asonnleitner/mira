@@ -14,6 +14,11 @@ const envSchema = z.object({
   ENVIRONMENT: z.string().default('development'),
   LOG_LEVEL: z.string().default('info'),
   PORT: z.coerce.number().default(3000),
+  CHECKIN_INTERVAL_MINUTES: z.coerce.number().default(15),
+  CHECKIN_DEFAULT_DAYS: z.coerce.number().default(3),
+  CHECKIN_WINDOW_START: z.coerce.number().default(9),
+  CHECKIN_WINDOW_END: z.coerce.number().default(20),
+  CHECKIN_TIMEZONE: z.string().default('Europe/Vienna'),
 })
 
 const parsed = envSchema.safeParse(process.env)

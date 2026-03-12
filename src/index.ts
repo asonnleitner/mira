@@ -4,9 +4,11 @@ import process from 'node:process'
 import { logger } from '~/telemetry/logger'
 import { createBot } from './bot/bot'
 import { startHealthServer } from './health'
+import { startCheckInScheduler, stopCheckInScheduler } from './scheduler/check-in'
 
 const bot = createBot()
 let healthServer: ReturnType<typeof startHealthServer> | undefined
+let checkInTimer: Timer | undefined
 
 // Start bot with long polling
 async function main() {
@@ -17,6 +19,7 @@ async function main() {
     await bot.start({
       onStart: (botInfo) => {
         logger.info(`Bot @${botInfo.username} started!`)
+        checkInTimer = startCheckInScheduler(bot.api)
       },
     })
   }
@@ -29,6 +32,8 @@ async function main() {
 async function shutdown() {
   logger.warn('Shutting down...')
   try {
+    if (checkInTimer)
+      stopCheckInScheduler(checkInTimer)
     healthServer?.stop()
     await bot.stop()
   }

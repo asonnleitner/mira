@@ -2,8 +2,9 @@ import type { BotContext } from './context'
 import { Bot, session } from 'grammy'
 import { config } from '~/config'
 import { logger } from '~/telemetry/logger'
-import { handleHistory, handlePause, handleResume, handleStart, handleStatus } from './handlers/commands'
+import { handleCheckIn, handleHistory, handlePause, handleResume, handleStart, handleStatus } from './handlers/commands'
 import { handleMessage } from './handlers/message'
+import { checkInMenu } from './menus/check-in'
 import { tracingMiddleware } from './middleware/tracing'
 import { sessionConfig } from './session'
 
@@ -16,12 +17,16 @@ export function createBot(): Bot<BotContext> {
   // Session middleware (PostgreSQL-backed)
   bot.use(session(sessionConfig))
 
+  // Menu middleware (must be before command registration)
+  bot.use(checkInMenu)
+
   // Commands
   bot.command('start', handleStart)
   bot.command('status', handleStatus)
   bot.command('pause', handlePause)
   bot.command('resume', handleResume)
   bot.command('history', handleHistory)
+  bot.command('checkin', handleCheckIn)
 
   // Text messages → therapy handler
   bot.on('message:text', handleMessage)

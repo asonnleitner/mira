@@ -37,6 +37,8 @@ export const sessionConfig: SessionOptions<SessionData, BotContext> = {
   initial: () => ({
     activeSessionId: null,
     patientId: null,
+    checkInEnabled: null,
+    checkInIntervalDays: null,
   }),
   storage: sessionStorage,
   getSessionKey: ctx => ctx.chat?.id.toString(),

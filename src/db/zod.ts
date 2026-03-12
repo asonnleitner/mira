@@ -1,6 +1,6 @@
 import { createInsertSchema, createSelectSchema } from 'drizzle-orm/zod'
 import * as z from 'zod'
-import { clinicalArtifacts, patients, sessionMessages, therapySessions } from '~/db/schema'
+import { checkInPreferences, clinicalArtifacts, patients, sessionMessages, therapySessions } from '~/db/schema'
 
 // ---------------------------------------------------------------------------
 // Drizzle-derived Zod schemas
@@ -18,6 +18,9 @@ export const selectMessageSchema = createSelectSchema(sessionMessages)
 export const insertPatientSchema = createInsertSchema(patients)
 export const selectPatientSchema = createSelectSchema(patients)
 
+export const insertCheckInPreferenceSchema = createInsertSchema(checkInPreferences)
+export const selectCheckInPreferenceSchema = createSelectSchema(checkInPreferences)
+
 // ---------------------------------------------------------------------------
 // Derived insert types (for query function params)
 // ---------------------------------------------------------------------------
@@ -26,6 +29,7 @@ export type InsertArtifact = z.infer<typeof insertArtifactSchema>
 export type InsertSession = z.infer<typeof insertSessionSchema>
 export type InsertMessage = z.infer<typeof insertMessageSchema>
 export type InsertPatient = z.infer<typeof insertPatientSchema>
+export type InsertCheckInPreference = z.infer<typeof insertCheckInPreferenceSchema>
 
 // ---------------------------------------------------------------------------
 // SOAP note schema (shared between artifact-extractor and storage)

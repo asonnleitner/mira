@@ -63,6 +63,8 @@ function getFallback(purpose: string): string {
     no_active_session: 'No active session. Send a message to start one.',
     no_paused_session: 'No paused session found. Send a message to start a new one.',
     no_history: 'No session history yet.',
+    check_in: 'Hi\\! It\'s been a little while since we last talked\\. I\'m here whenever you\'d like to chat\\.',
+    check_in_couples: 'Hi both\\! It\'s been a little while since our last session\\. I\'m here whenever you\'d like to continue\\.',
   }
   return fallbacks[purpose] ?? 'I\'m here for you.'
 }
