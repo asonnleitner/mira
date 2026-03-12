@@ -4,6 +4,14 @@ x-logging: &default-logging
     max-size: 10m
     max-file: '3'
 
+volumes:
+  claude:
+    name: claude
+    driver: local
+  claude-json:
+    name: claude-json
+    driver: local
+
 services:
   bot:
     build:
@@ -13,8 +21,8 @@ services:
     volumes:
       - ./data/app/data:/app/data
       - ./data/app/db:/app/db
-      - ./data/home/bun/.claude:/home/bun/.claude
-      - ./data/home/bun/.claude.json:/home/bun/.claude.json
+      - claude:/home/bun/.claude
+      - claude-json:/home/bun/.claude.json
     depends_on:
       init-permissions:
         condition: service_completed_successfully
