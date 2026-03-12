@@ -47,6 +47,10 @@ export function sanitizeMarkdownV2(text: string): string {
     return `\x00${idx}\x00`
   }
 
+  function resolve(str: string): string {
+    return str.replace(RE_PLACEHOLDER, (_, i) => placeholders[Number(i)] ?? '')
+  }
+
   let s = text
 
   // 1. Protect already-escaped characters (don't double-escape)
@@ -60,14 +64,14 @@ export function sanitizeMarkdownV2(text: string): string {
 
   // 4. Protect inline links [text](url)
   s = s.replace(RE_INLINE_LINK, (_, linkText, url) => {
-    const sanitizedText = sanitizeMarkdownV2(linkText)
+    const sanitizedText = sanitizeMarkdownV2(resolve(linkText))
     return ph(`[${sanitizedText}](${url})`)
   })
 
   // 5. Protect formatting pairs in order: ||, __, *, _, ~
   for (const [pattern, open, close] of FORMAT_PATTERNS) {
     s = s.replace(pattern, (_, content) => {
-      const sanitizedContent = sanitizeMarkdownV2(content)
+      const sanitizedContent = sanitizeMarkdownV2(resolve(content))
       return ph(`${open}${sanitizedContent}${close}`)
     })
   }
