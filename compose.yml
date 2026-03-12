@@ -23,17 +23,17 @@ services:
     logging: *default-logging
     networks:
       - bot
-    read_only: true
-    tmpfs:
-      - /tmp:rw,noexec,nosuid,size=100m
-    cap_drop:
-      - ALL
-    security_opt:
-      - no-new-privileges:true
-    mem_limit: 2g
-    cpus: 2
-    pids_limit: 512
-    ipc: private
+  #    read_only: true
+  #    tmpfs:
+  #      - /tmp:rw,noexec,nosuid,size=100m
+  #    cap_drop:
+  #      - ALL
+  #    security_opt:
+  #      - no-new-privileges:true
+  #    mem_limit: 2g
+  #    cpus: 2
+  #    pids_limit: 512
+  #    ipc: private
 
   init-permissions:
     image: busybox:latest
