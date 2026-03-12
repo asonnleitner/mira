@@ -7,7 +7,7 @@ WORKDIR /app
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
     apt-get update && apt-get install -y --no-install-recommends \
-    curl tini \
+    curl tini su-exec \
     && curl -fsSL https://claude.ai/install.sh | bash
 
 FROM base AS deps
@@ -28,8 +28,6 @@ RUN mkdir -p /app/data /app/db /home/bun/.claude \
      && chown -R 1000:1000 /app
 
 RUN bun install --frozen-lockfile
-
-USER bun
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
   CMD curl -f http://localhost:3000/health || exit 1

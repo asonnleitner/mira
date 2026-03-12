@@ -33,6 +33,10 @@ services:
       - /tmp:rw,noexec,nosuid,size=100m
     cap_drop:
       - ALL
+    cap_add:
+      - CHOWN
+      - SETUID
+      - SETGID
     security_opt:
       - no-new-privileges:true
     mem_limit: 2g
