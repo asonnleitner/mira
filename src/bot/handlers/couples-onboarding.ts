@@ -179,6 +179,7 @@ async function runCouplesOnboardingAgent(
       options: {
         systemPrompt,
         model: ANTHROPIC_MODEL_CLAUDE_SONNET,
+        cwd: config.DATA_DIR,
         mcpServers: { 'couples-onboarding-tools': server },
         allowedTools,
         tools: [] as string[],
@@ -326,6 +327,10 @@ export async function startCouplesOnboarding(ctx: BotContext): Promise<void> {
     await sendMarkdownV2({ chatId, text: response, api: ctx.api })
     setupTimers(ctx, chatId)
   }
+  else {
+    logger.error(`[couples-onboarding] Empty response from onboarding agent for chat ${chatId}`)
+    await ctx.reply('I\'m having trouble starting up. Please try again in a moment.')
+  }
 }
 
 export async function handleCouplesOnboardingMessage(ctx: BotContext): Promise<void> {
@@ -371,5 +376,9 @@ export async function handleCouplesOnboardingMessage(ctx: BotContext): Promise<v
     if (couplesOnboardingState.has(chatId)) {
       setupTimers(ctx, chatId)
     }
+  }
+  else {
+    logger.error(`[couples-onboarding] Empty response from onboarding agent for chat ${chatId}`)
+    await ctx.reply('I\'m having trouble processing your message. Please try again.')
   }
 }

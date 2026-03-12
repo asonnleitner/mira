@@ -51,10 +51,12 @@ export async function tracedQuery(
 
     const ownServers = new Set(Object.keys(options.mcpServers ?? {}))
     let result: TracedQueryResult = { response: '', structuredOutput: null, sessionId: '' }
+    let messageCount = 0
 
     const q = query({ prompt, options })
 
     for await (const message of q) {
+      messageCount++
       if (message.type === 'system' && message.subtype === 'init') {
         if (ownServers.size > 0) {
           const failed = message.mcp_servers.filter(s => s.status !== 'connected' && ownServers.has(s.name))
@@ -102,11 +104,14 @@ export async function tracedQuery(
           [ATTR_ERROR_TYPE]: message.error,
         })
       }
+      else {
+        logger.debug(`[${label}] SDK message:`, { type: message.type, subtype: 'subtype' in message ? message.subtype : undefined })
+      }
     }
 
     if (!result.resultMessage) {
-      logger.warn(`[${label}] Agent query completed without a result message`)
-      span.addEvent('sdk.no_result')
+      logger.warn(`[${label}] Agent query completed without a result message (${messageCount} messages received)`)
+      span.addEvent('sdk.no_result', { 'sdk.message_count': messageCount })
     }
 
     const msg = result.resultMessage

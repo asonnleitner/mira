@@ -166,6 +166,7 @@ async function runOnboardingAgent(ctx: BotContext, telegramId: number, userMessa
       options: {
         systemPrompt,
         model: ANTHROPIC_MODEL_CLAUDE_SONNET,
+        cwd: config.DATA_DIR,
         mcpServers: { 'onboarding-tools': server },
         allowedTools,
         tools: [] as string[],
@@ -240,6 +241,10 @@ export async function startOnboarding(ctx: BotContext): Promise<void> {
   if (response) {
     await replyMarkdownV2(ctx, response)
   }
+  else {
+    logger.error(`[onboarding] Empty response from onboarding agent for user ${telegramId}`)
+    await ctx.reply('I\'m having trouble starting up. Please try /start again in a moment.')
+  }
 }
 
 export function isOnboarding(telegramId: number): boolean {
@@ -260,6 +265,11 @@ export async function handleOnboardingMessage(ctx: BotContext): Promise<void> {
 
   const response = await runOnboardingAgent(ctx, telegramId, text, state.sdkSessionId)
 
-  if (response)
+  if (response) {
     await replyMarkdownV2(ctx, response)
+  }
+  else {
+    logger.error(`[onboarding] Empty response from onboarding agent for user ${telegramId}`)
+    await ctx.reply('I\'m having trouble processing your message. Please try again.')
+  }
 }
