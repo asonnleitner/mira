@@ -6,20 +6,38 @@ x-logging: &default-logging
 
 services:
   bot:
-    build: .
-    command: [bun, --bun, --watch, run, src/index.ts]
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
     env_file: .env
     environment:
+      DATABASE_URL: /app/db/sqlite.db
+      DATA_DIR: /app/data
       OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318
+      ENVIRONMENT: production
     volumes:
-      - ./src:/app/src
-      - ./data:/app/data
+      - ./data/app/data:/app/data
+      - ./data/app/db:/app/db
+      - ./data/home/bun/.claude:/home/bun/.claude
     depends_on:
-      postgres:
-        condition: service_healthy
       jaeger:
         condition: service_started
     restart: unless-stopped
+    logging: *default-logging
+    networks:
+      - bot
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=100m
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+      - seccomp=docker/seccomp-profile.json
+    mem_limit: 2g
+    cpus: 2
+    pids_limit: 150
+    ipc: private
 
   jaeger:
     image: jaegertracing/jaeger:latest
@@ -31,3 +49,9 @@ services:
       COLLECTOR_OTLP_ENABLED: 'true'
     logging: *default-logging
     restart: unless-stopped
+    networks:
+      - bot
+
+networks:
+  bot:
+    driver: bridge
