@@ -23,7 +23,7 @@ services:
     logging: *default-logging
     networks:
       - bot
-  #    read_only: true
+    read_only: true
   #    tmpfs:
   #      - /tmp:rw,noexec,nosuid,size=100m
   #    cap_drop:
