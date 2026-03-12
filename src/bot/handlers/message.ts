@@ -4,7 +4,7 @@ import type { BotContext } from '~/bot/context'
 import type { SessionType } from '~/db/schema'
 import { join } from 'node:path'
 import { runNoteTaker } from '~/agent/artifact-extractor'
-import { continueTherapySession, StaleSessionError, startTherapySession } from '~/agent/therapist'
+import { continueTherapySession, isStaleSessionError, startTherapySession } from '~/agent/therapist'
 import { handleCouplesOnboardingMessage, isCouplesOnboarding, startCouplesOnboarding } from '~/bot/handlers/couples-onboarding'
 import { handleOnboardingMessage, isOnboarding, startOnboarding } from '~/bot/handlers/onboarding'
 import { detectChatMode } from '~/bot/router'
@@ -304,7 +304,7 @@ async function processTherapyMessage(
         )
       }
       catch (err) {
-        if (err instanceof StaleSessionError) {
+        if (isStaleSessionError(err)) {
           logger.warn(`[message] Stale SDK session ${session.sdkSessionId}, starting fresh session`)
           await updateSessionSdkId(session.id, null)
           const result = await startTherapySession(sessionCtx, combinedMessage, sdkAbortController)

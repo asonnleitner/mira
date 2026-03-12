@@ -5,6 +5,7 @@ import { createSdkMcpServer, tool } from '@anthropic-ai/claude-agent-sdk'
 import { ATTR_GEN_AI_AGENT_NAME, ATTR_GEN_AI_CONVERSATION_ID, GEN_AI_OPERATION_NAME_VALUE_INVOKE_AGENT } from '@opentelemetry/semantic-conventions/incubating'
 import * as z from 'zod'
 import { tracedQuery } from '~/agent/query'
+import { isStaleSessionError } from '~/agent/therapist'
 import { replyMarkdownV2 } from '~/bot/utils/telegram-send'
 import { config } from '~/config'
 import { ANTHROPIC_MODEL_CLAUDE_SONNET, ATTR_TELEGRAM_USER_ID } from '~/constants'
@@ -151,7 +152,7 @@ async function runOnboardingAgent(ctx: BotContext, telegramId: number, userMessa
   const systemPrompt = ONBOARDING_SYSTEM_PROMPT + languageHint
   const allowedTools = ['mcp__onboarding-tools__complete_onboarding']
 
-  const { response, sessionId: newSdkSessionId } = await tracedQuery(
+  const queryArgs = (resume?: string) => [
     {
       operationName: GEN_AI_OPERATION_NAME_VALUE_INVOKE_AGENT,
       label: 'onboarding',
@@ -167,30 +168,48 @@ async function runOnboardingAgent(ctx: BotContext, telegramId: number, userMessa
         model: ANTHROPIC_MODEL_CLAUDE_SONNET,
         mcpServers: { 'onboarding-tools': server },
         allowedTools,
-        tools: [],
+        tools: [] as string[],
         maxTurns: 5,
         maxBudgetUsd: 2,
-        persistSession: false,
-        permissionMode: 'dontAsk',
+        persistSession: true,
+        permissionMode: 'dontAsk' as const,
         stderr: (data: string) => logger.warn('[onboarding:stderr]', data),
-        ...(sdkSessionId ? { resume: sdkSessionId } : {}),
+        ...(resume ? { resume } : {}),
       },
     },
     {
-      onSuccess: (result, span) => {
+      onSuccess: (result: { sessionId: string }, span: { setAttribute: (key: string, value: string) => void }) => {
         span.setAttribute(ATTR_GEN_AI_CONVERSATION_ID, result.sessionId)
       },
     },
-  )
+  ] as const
+
+  let result: Awaited<ReturnType<typeof tracedQuery>>
+
+  try {
+    result = await tracedQuery(...queryArgs(sdkSessionId))
+  }
+  catch (err) {
+    if (sdkSessionId && isStaleSessionError(err)) {
+      logger.warn(`[onboarding] Stale session ${sdkSessionId}, retrying without resume`)
+      const state = onboardingState.get(telegramId)
+      if (state)
+        state.sdkSessionId = undefined
+      result = await tracedQuery(...queryArgs())
+    }
+    else {
+      throw err
+    }
+  }
 
   // Update stored SDK session ID
   const state = onboardingState.get(telegramId)
 
   if (state) {
-    state.sdkSessionId = newSdkSessionId
+    state.sdkSessionId = result.sessionId
   }
 
-  return response
+  return result.response
 }
 
 export async function startOnboarding(ctx: BotContext): Promise<void> {

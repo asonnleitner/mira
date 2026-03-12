@@ -40,6 +40,13 @@ export class StaleSessionError extends Error {
   }
 }
 
+export function isStaleSessionError(err: unknown): boolean {
+  if (err instanceof StaleSessionError)
+    return true
+  const msg = err instanceof Error ? err.message : String(err)
+  return msg.includes('No conversation found') || msg.includes('process exited with code 1')
+}
+
 const ALLOWED_TOOLS = [
   'mcp__therapy-tools__save_session_note',
   'mcp__therapy-tools__log_exercise',

@@ -4,6 +4,7 @@ import { createSdkMcpServer, tool } from '@anthropic-ai/claude-agent-sdk'
 import { ATTR_GEN_AI_AGENT_NAME, ATTR_GEN_AI_CONVERSATION_ID, GEN_AI_OPERATION_NAME_VALUE_INVOKE_AGENT } from '@opentelemetry/semantic-conventions/incubating'
 import * as z from 'zod'
 import { tracedQuery } from '~/agent/query'
+import { isStaleSessionError } from '~/agent/therapist'
 import { sendMarkdownV2 } from '~/bot/utils/telegram-send'
 import { config } from '~/config'
 import { ANTHROPIC_MODEL_CLAUDE_SONNET, ATTR_TELEGRAM_CHAT_ID } from '~/constants'
@@ -164,7 +165,7 @@ async function runCouplesOnboardingAgent(
   const systemPrompt = COUPLES_ONBOARDING_SYSTEM_PROMPT + partnerContext
   const allowedTools = ['mcp__couples-onboarding-tools__complete_couples_onboarding']
 
-  const { response, sessionId: newSdkSessionId } = await tracedQuery(
+  const queryArgs = (resume?: string) => [
     {
       operationName: GEN_AI_OPERATION_NAME_VALUE_INVOKE_AGENT,
       label: 'couples-onboarding',
@@ -180,27 +181,44 @@ async function runCouplesOnboardingAgent(
         model: ANTHROPIC_MODEL_CLAUDE_SONNET,
         mcpServers: { 'couples-onboarding-tools': server },
         allowedTools,
-        tools: [],
+        tools: [] as string[],
         maxTurns: 5,
         maxBudgetUsd: 2,
-        persistSession: false,
-        permissionMode: 'dontAsk',
+        persistSession: true,
+        permissionMode: 'dontAsk' as const,
         stderr: (data: string) => logger.warn('[couples-onboarding:stderr]', data),
-        ...(sdkSessionId ? { resume: sdkSessionId } : {}),
+        ...(resume ? { resume } : {}),
       },
     },
     {
-      onSuccess: (result, span) => {
+      onSuccess: (result: { sessionId: string }, span: { setAttribute: (key: string, value: string) => void }) => {
         span.setAttribute(ATTR_GEN_AI_CONVERSATION_ID, result.sessionId)
       },
     },
-  )
+  ] as const
 
-  if (state) {
-    state.sdkSessionId = newSdkSessionId
+  let queryResult: Awaited<ReturnType<typeof tracedQuery>>
+
+  try {
+    queryResult = await tracedQuery(...queryArgs(sdkSessionId))
+  }
+  catch (err) {
+    if (sdkSessionId && isStaleSessionError(err)) {
+      logger.warn(`[couples-onboarding] Stale session ${sdkSessionId}, retrying without resume`)
+      if (state)
+        state.sdkSessionId = undefined
+      queryResult = await tracedQuery(...queryArgs())
+    }
+    else {
+      throw err
+    }
   }
 
-  return response
+  if (state) {
+    state.sdkSessionId = queryResult.sessionId
+  }
+
+  return queryResult.response
 }
 
 function setupTimers(ctx: BotContext, chatId: number): void {
