@@ -32,8 +32,9 @@ export async function writeSoapNote(
 
 export async function readSoapNote(filePath: string): Promise<string> {
   const file = Bun.file(filePath)
-  if (await file.exists()) {
+
+  if (await file.exists())
     return file.text()
-  }
+
   return ''
 }

@@ -10,6 +10,7 @@ export async function writeProfile(
   await mkdir(dirname(filePath), { recursive: true })
 
   const now = new Date().toISOString()
+
   const sections: string[] = [
     `# Patient Profile: ${profile.fullName || 'Unknown'}`,
     '',
@@ -17,18 +18,18 @@ export async function writeProfile(
     `**Last Updated:** ${now}`,
   ]
 
-  if (profile.preferredLanguage) {
-    sections.push(
-      `**Preferred Language:** ${profile.preferredLanguage}`,
-    )
-  }
+  if (profile.preferredLanguage)
+    sections.push(`**Preferred Language:** ${profile.preferredLanguage}`)
 
   if (profile.dateOfBirth)
     sections.push(`**Date of Birth:** ${profile.dateOfBirth}`)
+
   if (profile.gender)
     sections.push(`**Gender:** ${profile.gender}`)
+
   if (profile.occupation)
     sections.push(`**Occupation:** ${profile.occupation}`)
+
   if (profile.relationshipStatus)
     sections.push(`**Relationship Status:** ${profile.relationshipStatus}`)
 
@@ -38,6 +39,7 @@ export async function writeProfile(
 
   if (profile.recurringThemes?.length) {
     sections.push('', '## Recurring Themes')
+
     for (const t of profile.recurringThemes) {
       sections.push(`- ${t.theme} (${t.frequency} mentions, trend: ${t.trend})`)
     }
@@ -45,6 +47,7 @@ export async function writeProfile(
 
   if (profile.copingPatterns?.length) {
     sections.push('', '## Coping Patterns')
+
     for (const p of profile.copingPatterns) {
       sections.push(`- ${p}`)
     }
@@ -52,6 +55,7 @@ export async function writeProfile(
 
   if (profile.therapyGoals?.length) {
     sections.push('', '## Goals')
+
     profile.therapyGoals.forEach((g, i) => {
       sections.push(`${i + 1}. ${g}`)
     })
@@ -59,6 +63,7 @@ export async function writeProfile(
 
   if (profile.triggers?.length) {
     sections.push('', '## Triggers')
+
     for (const t of profile.triggers) {
       sections.push(`- ${t}`)
     }
@@ -74,20 +79,23 @@ export async function writeProfile(
 
   if (profile.progressNotes?.length) {
     sections.push('', '## Progress Notes')
+
     for (const n of profile.progressNotes) {
       sections.push(`- ${n.date}: ${n.note}`)
     }
   }
 
   sections.push('')
+
   await Bun.write(filePath, sections.join('\n'))
 }
 
 export async function readProfile(filePath: string): Promise<string> {
   const file = Bun.file(filePath)
-  if (await file.exists()) {
+
+  if (await file.exists())
     return file.text()
-  }
+
   return ''
 }
 
@@ -114,9 +122,10 @@ export async function writeRelationshipProfile(
 
   if (data.duration)
     sections.push(`**Together:** ${data.duration}`)
-  if (data.reason) {
+
+  if (data.reason)
     sections.push('', '## Reason for Therapy', data.reason)
-  }
+
   if (data.sharedGoals?.length) {
     sections.push('', '## Shared Goals')
     data.sharedGoals.forEach((g, i) => sections.push(`${i + 1}. ${g}`))

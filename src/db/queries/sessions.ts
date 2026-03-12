@@ -15,6 +15,7 @@ export async function findActiveSession(chatId: number) {
     )
     .orderBy(desc(tables.therapySessions.startedAt))
     .limit(1)
+
   return rows[0] ?? null
 }
 
@@ -27,6 +28,7 @@ export async function createSession(data: {
     .insert(tables.therapySessions)
     .values(data)
     .returning()
+
   return session
 }
 
@@ -61,6 +63,7 @@ export async function updateSessionStatus(
     .set({ status })
     .where(eq(tables.therapySessions.id, sessionId))
     .returning()
+
   return updated
 }
 

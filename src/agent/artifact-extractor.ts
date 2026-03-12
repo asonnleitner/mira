@@ -1,11 +1,10 @@
-import type { SDKResultSuccess } from '@anthropic-ai/claude-agent-sdk'
 import type { SessionContext } from '~/agent/context-assembler'
 import type { PatientProfile } from '~/db/schema'
 import { dirname, join } from 'node:path'
-import { query } from '@anthropic-ai/claude-agent-sdk'
 import { ATTR_GEN_AI_OUTPUT_TYPE, GEN_AI_OPERATION_NAME_VALUE_CHAT, GEN_AI_OUTPUT_TYPE_VALUE_JSON } from '@opentelemetry/semantic-conventions/incubating'
 import * as z from 'zod'
-import { MODELS } from '~/constants'
+import { tracedQuery } from '~/agent/query'
+import { ANTHROPIC_MODEL_CLAUDE_SONNET, ATTR_BOT_SESSION_ID } from '~/constants'
 import { saveArtifact } from '~/db/queries/artifacts'
 import { updatePatientProfile } from '~/db/queries/patients'
 import { artifactTypeValues } from '~/db/schema'
@@ -13,7 +12,6 @@ import { soapSchema } from '~/db/zod'
 import { readProfile, writeProfile } from '~/storage/profile'
 import { writeSoapNote } from '~/storage/soap-notes'
 import { logger } from '~/telemetry/logger'
-import { setGenAiContext, setGenAiResult, withGenAiSpan } from '~/telemetry/tracing'
 
 const ArtifactSchema = z.object({
   artifacts: z.array(
@@ -38,12 +36,8 @@ export async function extractArtifacts(
   patientMessage: string,
   therapistResponse: string,
 ): Promise<void> {
-  await withGenAiSpan(GEN_AI_OPERATION_NAME_VALUE_CHAT, MODELS.HAIKU, {
-    [ATTR_GEN_AI_OUTPUT_TYPE]: GEN_AI_OUTPUT_TYPE_VALUE_JSON,
-    'bot.session_id': ctx.sessionId,
-  }, async (span) => {
-    try {
-      const prompt = `Analyze this therapy exchange and extract clinical artifacts.
+  try {
+    const prompt = `Analyze this therapy exchange and extract clinical artifacts.
 
 Patient message:
 """
@@ -58,25 +52,25 @@ ${therapistResponse}
 Extract any clinically significant artifacts (disclosures, insights, emotions, patterns, etc.).
 Also identify any profile updates needed and whether a SOAP note should be generated (only if this feels like a natural session ending point).`
 
-      const systemPrompt = 'You are a clinical note-taking assistant. Extract therapy artifacts from the exchange. Be precise and clinical. Only extract genuinely significant items. Not every message warrants artifacts.'
+    const systemPrompt = 'You are a clinical note-taking assistant. Extract therapy artifacts from the exchange. Be precise and clinical. Only extract genuinely significant items. Not every message warrants artifacts.'
 
-      setGenAiContext(span, {
-        systemPrompt,
-        inputMessages: [{ role: 'user', content: prompt }],
-        toolDefinitions: [],
-      })
-
-      let result: unknown = null
-      let resultMsg: SDKResultSuccess | undefined
-
-      const q = query({
+    const { structuredOutput } = await tracedQuery(
+      {
+        operationName: GEN_AI_OPERATION_NAME_VALUE_CHAT,
+        label: 'artifact-extractor',
+        attributes: {
+          [ATTR_GEN_AI_OUTPUT_TYPE]: GEN_AI_OUTPUT_TYPE_VALUE_JSON,
+          [ATTR_BOT_SESSION_ID]: ctx.sessionId,
+        },
+      },
+      {
         prompt,
         options: {
           systemPrompt,
-          model: MODELS.HAIKU,
+          model: ANTHROPIC_MODEL_CLAUDE_SONNET,
           tools: [],
           maxTurns: 1,
-          maxBudgetUsd: 0.02,
+          maxBudgetUsd: 1,
           persistSession: false,
           permissionMode: 'acceptEdits',
           stderr: (data: string) => logger.warn('[artifact-extractor:stderr]', data),
@@ -85,114 +79,90 @@ Also identify any profile updates needed and whether a SOAP note should be gener
             schema: z.toJSONSchema(ArtifactSchema),
           },
         },
+      },
+    )
+
+    if (!structuredOutput)
+      return
+
+    const parsed = ArtifactSchema.safeParse(structuredOutput)
+    if (!parsed.success)
+      return
+
+    const data = parsed.data
+
+    // Save artifacts to DB
+    for (const artifact of data.artifacts) {
+      await saveArtifact({
+        sessionId: ctx.sessionId,
+        patientId: ctx.patientId,
+        type: artifact.type,
+        content: artifact.content,
+        verbatimQuote: artifact.verbatimQuote,
+        clinicalRelevance: artifact.clinicalRelevance,
       })
+    }
 
-      for await (const message of q) {
-        if (message.type === 'result' && message.subtype === 'success') {
-          result = message.structured_output
-          resultMsg = message
-        }
-        else if (message.type === 'result') {
-          logger.error('[artifact-extractor] SDK error result:', message)
-        }
-      }
+    // Apply profile updates
+    const updates = data.profileUpdates
+    if (updates.newThemes?.length || updates.newTriggers?.length || updates.progressNote) {
+      const patient = await updatePatientProfile(ctx.telegramId, {})
 
-      setGenAiResult(span, {
-        outputMessages: [{ role: 'assistant', content: JSON.stringify(result) }],
-        inputTokens: resultMsg?.usage.input_tokens,
-        outputTokens: resultMsg?.usage.output_tokens,
-        cacheReadInputTokens: resultMsg?.usage.cache_read_input_tokens,
-        cacheCreationInputTokens: resultMsg?.usage.cache_creation_input_tokens,
-        totalCostUsd: resultMsg?.total_cost_usd,
-        responseModel: MODELS.HAIKU,
-      })
+      if (patient) {
+        const profile: PatientProfile = (patient.profile as PatientProfile) ?? {}
 
-      if (!result)
-        return
+        if (updates.newThemes?.length) {
+          const themes = profile.recurringThemes ?? []
 
-      const parsed = ArtifactSchema.safeParse(result)
-      if (!parsed.success)
-        return
-
-      const data = parsed.data
-
-      // Save artifacts to DB
-      for (const artifact of data.artifacts) {
-        await saveArtifact({
-          sessionId: ctx.sessionId,
-          patientId: ctx.patientId,
-          type: artifact.type,
-          content: artifact.content,
-          verbatimQuote: artifact.verbatimQuote,
-          clinicalRelevance: artifact.clinicalRelevance,
-        })
-      }
-
-      // Apply profile updates
-      const updates = data.profileUpdates
-      if (updates.newThemes?.length || updates.newTriggers?.length || updates.progressNote) {
-        const patient = await updatePatientProfile(ctx.telegramId, {})
-
-        if (patient) {
-          const profile: PatientProfile = (patient.profile as PatientProfile) ?? {}
-
-          if (updates.newThemes?.length) {
-            const themes = profile.recurringThemes ?? []
-
-            for (const theme of updates.newThemes) {
-              const existing = themes.find(t => t.theme === theme)
-              if (existing) {
-                existing.frequency++
-              }
-              else {
-                themes.push({ theme, frequency: 1, trend: 'new' })
-              }
+          for (const theme of updates.newThemes) {
+            const existing = themes.find(t => t.theme === theme)
+            if (existing) {
+              existing.frequency++
             }
-            profile.recurringThemes = themes
+            else {
+              themes.push({ theme, frequency: 1, trend: 'new' })
+            }
           }
-
-          if (updates.newTriggers?.length) {
-            const existing = new Set(profile.triggers ?? [])
-            for (const t of updates.newTriggers)
-              existing.add(t)
-            profile.triggers = [...existing]
-          }
-
-          if (updates.progressNote) {
-            profile.progressNotes = [
-              ...(profile.progressNotes ?? []),
-              {
-                date: new Date().toISOString().split('T')[0],
-                note: updates.progressNote,
-              },
-            ]
-          }
-
-          await updatePatientProfile(ctx.telegramId, profile)
-          await writeProfile(ctx.profilePath, ctx.telegramId, profile)
+          profile.recurringThemes = themes
         }
-      }
 
-      // Generate SOAP note if needed
-      if (data.shouldGenerateSoapNote) {
-        await generateSoapNote(ctx)
+        if (updates.newTriggers?.length) {
+          const existing = new Set(profile.triggers ?? [])
+          for (const t of updates.newTriggers)
+            existing.add(t)
+          profile.triggers = [...existing]
+        }
+
+        if (updates.progressNote) {
+          profile.progressNotes = [
+            ...(profile.progressNotes ?? []),
+            {
+              date: new Date().toISOString().split('T')[0],
+              note: updates.progressNote,
+            },
+          ]
+        }
+
+        await updatePatientProfile(ctx.telegramId, profile)
+        await writeProfile(ctx.profilePath, ctx.telegramId, profile)
       }
     }
-    catch (err) {
-      logger.error('Artifact extraction failed:', err)
+
+    // Generate SOAP note if needed
+    if (data.shouldGenerateSoapNote) {
+      await generateSoapNote(ctx)
     }
-  })
+  }
+  catch (err) {
+    logger.error('Artifact extraction failed:', err)
+  }
 }
 
 async function generateSoapNote(ctx: SessionContext): Promise<void> {
-  await withGenAiSpan(GEN_AI_OPERATION_NAME_VALUE_CHAT, MODELS.HAIKU, {
-    [ATTR_GEN_AI_OUTPUT_TYPE]: GEN_AI_OUTPUT_TYPE_VALUE_JSON,
-    'bot.session_id': ctx.sessionId,
-  }, async (span) => {
-    try {
-      const profileContent = await readProfile(ctx.profilePath)
+  try {
+    const profileContent = await readProfile(ctx.profilePath)
 
-      const prompt = `Generate a SOAP note for this therapy session.
+    const prompt = `Generate a SOAP note for this therapy session.
 
 Patient profile:
 ${profileContent || 'No profile available'}
@@ -202,76 +172,51 @@ Session ID: ${ctx.sessionId}
 
 Provide a structured SOAP note based on the therapy session.`
 
-      const systemPrompt = 'You are a clinical documentation assistant. Generate concise, professional SOAP notes for therapy sessions.'
+    const systemPrompt = 'You are a clinical documentation assistant. Generate concise, professional SOAP notes for therapy sessions.'
 
-      setGenAiContext(span, {
+    const { structuredOutput } = await tracedQuery({
+      operationName: GEN_AI_OPERATION_NAME_VALUE_CHAT,
+      label: 'soap-note',
+      attributes: {
+        [ATTR_GEN_AI_OUTPUT_TYPE]: GEN_AI_OUTPUT_TYPE_VALUE_JSON,
+        [ATTR_BOT_SESSION_ID]: ctx.sessionId,
+      },
+    }, {
+      prompt,
+      options: {
         systemPrompt,
-        inputMessages: [{ role: 'user', content: prompt }],
-        toolDefinitions: [],
-      })
-
-      let result: unknown = null
-      let resultMsg: SDKResultSuccess | undefined
-
-      const q = query({
-        prompt,
-        options: {
-          systemPrompt,
-          model: MODELS.HAIKU,
-          tools: [],
-          maxTurns: 1,
-          maxBudgetUsd: 0.02,
-          persistSession: false,
-          permissionMode: 'acceptEdits',
-          stderr: (data: string) => logger.warn('[soap-note:stderr]', data),
-          outputFormat: {
-            type: 'json_schema',
-            schema: z.toJSONSchema(soapSchema),
-          },
+        model: ANTHROPIC_MODEL_CLAUDE_SONNET,
+        tools: [],
+        maxTurns: 1,
+        maxBudgetUsd: 1,
+        persistSession: false,
+        permissionMode: 'acceptEdits',
+        stderr: (data: string) => logger.warn('[soap-note:stderr]', data),
+        outputFormat: {
+          type: 'json_schema',
+          schema: z.toJSONSchema(soapSchema),
         },
-      })
+      },
+    })
 
-      for await (const message of q) {
-        if (message.type === 'result' && message.subtype === 'success') {
-          result = message.structured_output
-          resultMsg = message
-        }
-        else if (message.type === 'result') {
-          logger.error('[soap-note] SDK error result:', message)
-        }
-      }
+    if (!structuredOutput)
+      return
 
-      setGenAiResult(span, {
-        outputMessages: [{ role: 'assistant', content: JSON.stringify(result) }],
-        inputTokens: resultMsg?.usage.input_tokens,
-        outputTokens: resultMsg?.usage.output_tokens,
-        cacheReadInputTokens: resultMsg?.usage.cache_read_input_tokens,
-        cacheCreationInputTokens: resultMsg?.usage.cache_creation_input_tokens,
-        totalCostUsd: resultMsg?.total_cost_usd,
-        responseModel: MODELS.HAIKU,
-      })
+    const parsed = soapSchema.safeParse(structuredOutput)
 
-      if (!result)
-        return
+    if (!parsed.success)
+      return
 
-      const parsed = soapSchema.safeParse(result)
-      if (!parsed.success)
-        return
+    const notePath = join(dirname(ctx.transcriptPath), 'notes.md')
 
-      const notePath = join(
-        dirname(ctx.transcriptPath),
-        'notes.md',
-      )
-
-      await writeSoapNote(
-        notePath,
-        ctx.sessionId,
-        new Date().toISOString().split('T')[0],
-        parsed.data,
-      )
-    }
-    catch (err) {
-      logger.error('SOAP note generation failed:', err)
-    }
-  })
+    await writeSoapNote(
+      notePath,
+      ctx.sessionId,
+      new Date().toISOString().split('T')[0],
+      parsed.data,
+    )
+  }
+  catch (err) {
+    logger.error('SOAP note generation failed:', err)
+  }
 }

@@ -1,7 +1,14 @@
-export const MODELS = {
-  HAIKU: 'claude-haiku-4-5-20251001',
-  SONNET: 'claude-sonnet-4-6',
-  OPUS: 'claude-opus-4-6',
-} as const
+export const ANTHROPIC_MODEL_CLAUDE_SONNET = 'claude-sonnet-4-6'
+export const ANTHROPIC_MODEL_CLAUDE_OPUS = 'claude-opus-4-6'
 
-export type Model = typeof MODELS[keyof typeof MODELS]
+export type AnthropicModel = typeof ANTHROPIC_MODEL_CLAUDE_SONNET | typeof ANTHROPIC_MODEL_CLAUDE_OPUS
+
+export const ATTR_BOT_COMMAND = 'bot.command'
+export const ATTR_BOT_CHAT_MODE = 'bot.chat_mode'
+export const ATTR_BOT_MESSAGE_COUNT = 'bot.message_count'
+export const ATTR_BOT_SESSION_ID = 'bot.session_id'
+export const ATTR_BOT_PURPOSE = 'bot.purpose'
+export const ATTR_BOT_PATIENT_ID = 'bot.patient_id'
+export const ATTR_TELEGRAM_USER_ID = 'telegram.user_id'
+export const ATTR_TELEGRAM_CHAT_ID = 'telegram.chat_id'
+export const ATTR_TELEGRAM_USERNAME = 'telegram.username'

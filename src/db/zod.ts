@@ -1,9 +1,6 @@
 import { createInsertSchema, createSelectSchema } from 'drizzle-orm/zod'
 import * as z from 'zod'
-import { clinicalArtifacts } from './schema/artifacts'
-import { sessionMessages } from './schema/messages'
-import { patients } from './schema/patients'
-import { therapySessions } from './schema/sessions'
+import { clinicalArtifacts, patients, sessionMessages, therapySessions } from '~/db/schema'
 
 // ---------------------------------------------------------------------------
 // Drizzle-derived Zod schemas

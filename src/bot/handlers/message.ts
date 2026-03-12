@@ -7,7 +7,9 @@ import { extractArtifacts } from '~/agent/artifact-extractor'
 import { continueTherapySession, StaleSessionError, startTherapySession } from '~/agent/therapist'
 import { handleOnboardingMessage, isOnboarding, startOnboarding } from '~/bot/handlers/onboarding'
 import { detectChatMode } from '~/bot/router'
+import { sendMarkdownV2 } from '~/bot/utils/telegram-send'
 import { config } from '~/config'
+import { ATTR_BOT_CHAT_MODE, ATTR_BOT_MESSAGE_COUNT, ATTR_TELEGRAM_CHAT_ID } from '~/constants'
 import { createPatient, findPatientByTelegramId } from '~/db/queries/patients'
 import { createSession, findActiveSession, saveMessage, updateSessionLastMessage, updateSessionSdkId } from '~/db/queries/sessions'
 import { appendMessage, createTranscript } from '~/storage/transcript'
@@ -72,6 +74,7 @@ export async function handleMessage(ctx: BotContext): Promise<void> {
   }
 
   const spanContext = captureSpanContext()
+
   bufferMessage(ctx, chatId, chatMode, messageEntry, spanContext)
 }
 
@@ -86,8 +89,10 @@ function bufferMessage(ctx: BotContext, chatId: number, chatMode: SessionType, m
     }
 
     existing.messages.push(message)
+
     if (spanContext)
       existing.spanContexts.push(spanContext)
+
     existing.ctx = ctx // Use latest ctx for reply
   }
   else {
@@ -106,27 +111,31 @@ function bufferMessage(ctx: BotContext, chatId: number, chatMode: SessionType, m
 
   // Process immediately
   const ac = new AbortController()
+
   buffer.abortController = ac
+
   const messages = [...buffer.messages]
   const links = buffer.spanContexts.map(sc => ({ context: sc }))
+
   buffer.messages = []
   buffer.spanContexts = []
 
   void (async () => {
     try {
       await withLinkedSpan('bot.processTherapyMessage', {
-        'telegram.chat_id': chatId,
-        'bot.chat_mode': chatMode,
-        'bot.message_count': messages.length,
+        [ATTR_TELEGRAM_CHAT_ID]: chatId,
+        [ATTR_BOT_CHAT_MODE]: chatMode,
+        [ATTR_BOT_MESSAGE_COUNT]: messages.length,
       }, links, async () => {
         await processTherapyMessage(buffer.ctx, chatId, chatMode, messages, ac.signal)
       })
+
       chatBuffer.delete(chatId)
     }
     catch (err) {
-      if (ac.signal.aborted) {
+      if (ac.signal.aborted)
         return
-      }
+
       logger.error('Error processing therapy message:', err)
       chatBuffer.delete(chatId)
     }
@@ -144,21 +153,23 @@ async function processTherapyMessage(
   const typingInterval = setInterval(() => {
     ctx.api.sendChatAction(chatId, 'typing').catch(() => {})
   }, 4000)
+
   ctx.api.sendChatAction(chatId, 'typing').catch(() => {})
 
   try {
     // Resolve or create active session
     let session = await findActiveSession(chatId)
+
     const primaryPatientId = messages[0].patientId ?? ctx.session.patientId!
     const telegramId = ctx.from!.id
 
     if (!session) {
-      const transcriptDir
-        = chatMode === 'individual'
-          ? join('patients', String(telegramId))
-          : join('couples', String(chatId))
+      const transcriptDir = chatMode === 'individual'
+        ? join('patients', String(telegramId))
+        : join('couples', String(chatId))
 
       const sessionCount = Date.now() // Simple unique ID for path
+
       const transcriptPath = join(
         config.DATA_DIR,
         transcriptDir,
@@ -178,9 +189,7 @@ async function processTherapyMessage(
         type: chatMode,
         patient: chatMode === 'couples'
           ? messages.map(m => m.from).join(' & ')
-          : (ctx.from!.username
-              ? `@${ctx.from!.username}`
-              : ctx.from!.first_name || 'Patient'),
+          : (ctx.from!.username ? `@${ctx.from!.username}` : ctx.from!.first_name || 'Patient'),
         sessionId: session.id,
         startedAt: new Date(),
       })
@@ -190,6 +199,7 @@ async function processTherapyMessage(
 
     // Compose patient message (batch for couples)
     let combinedMessage: string
+
     if (messages.length === 1) {
       combinedMessage = messages[0].text
     }
@@ -208,6 +218,7 @@ async function processTherapyMessage(
         new Date(),
         messages.length > 1 ? msg.from : undefined,
       )
+
       await saveMessage({
         sessionId: session.id,
         patientId: msg.patientId,
@@ -246,6 +257,7 @@ async function processTherapyMessage(
 
     // Create AbortController to pass to SDK
     const sdkAbortController = new AbortController()
+
     signal.addEventListener('abort', () => sdkAbortController.abort(), { once: true })
 
     // Call Claude
@@ -284,16 +296,7 @@ async function processTherapyMessage(
       throw new DOMException('Aborted', 'AbortError')
 
     // Send response to Telegram
-    // Split long messages (Telegram limit is 4096 chars)
-    if (response.length <= 4096) {
-      await ctx.api.sendMessage(chatId, response, { parse_mode: 'MarkdownV2' })
-    }
-    else {
-      const chunks = splitMessage(response, 4096)
-      for (const chunk of chunks) {
-        await ctx.api.sendMessage(chatId, chunk, { parse_mode: 'MarkdownV2' })
-      }
-    }
+    await sendMarkdownV2({ chatId, text: response, api: ctx.api })
 
     // Append therapist response to transcript and DB
     await appendMessage(
@@ -302,6 +305,7 @@ async function processTherapyMessage(
       response,
       new Date(),
     )
+
     await saveMessage({
       sessionId: session.id,
       role: 'therapist',
@@ -319,34 +323,4 @@ async function processTherapyMessage(
   finally {
     clearInterval(typingInterval)
   }
-}
-
-function splitMessage(text: string, maxLen: number): string[] {
-  const chunks: string[] = []
-  let remaining = text
-
-  while (remaining.length > maxLen) {
-    // Try to split at a paragraph break
-    let splitIdx = remaining.lastIndexOf('\n\n', maxLen)
-    if (splitIdx === -1 || splitIdx < maxLen / 2) {
-      // Fall back to splitting at a newline
-      splitIdx = remaining.lastIndexOf('\n', maxLen)
-    }
-    if (splitIdx === -1 || splitIdx < maxLen / 2) {
-      // Fall back to splitting at a space
-      splitIdx = remaining.lastIndexOf(' ', maxLen)
-    }
-    if (splitIdx === -1) {
-      splitIdx = maxLen
-    }
-
-    chunks.push(remaining.slice(0, splitIdx))
-    remaining = remaining.slice(splitIdx).trimStart()
-  }
-
-  if (remaining) {
-    chunks.push(remaining)
-  }
-
-  return chunks
 }

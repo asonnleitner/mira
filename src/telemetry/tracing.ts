@@ -1,7 +1,7 @@
 import type { Attributes, Link, Span } from '@opentelemetry/api'
-import type { Model } from '~/constants'
+import type { AnthropicModel } from '~/constants'
 import { SpanKind, SpanStatusCode, trace } from '@opentelemetry/api'
-import { ATTR_GEN_AI_INPUT_MESSAGES, ATTR_GEN_AI_OPERATION_NAME, ATTR_GEN_AI_OUTPUT_MESSAGES, ATTR_GEN_AI_PROVIDER_NAME, ATTR_GEN_AI_REQUEST_MODEL, ATTR_GEN_AI_SYSTEM_INSTRUCTIONS, ATTR_GEN_AI_TOOL_DEFINITIONS, ATTR_GEN_AI_USAGE_CACHE_CREATION_INPUT_TOKENS, ATTR_GEN_AI_USAGE_CACHE_READ_INPUT_TOKENS, ATTR_GEN_AI_USAGE_INPUT_TOKENS, ATTR_GEN_AI_USAGE_OUTPUT_TOKENS, GEN_AI_PROVIDER_NAME_VALUE_ANTHROPIC } from '@opentelemetry/semantic-conventions/incubating'
+import { ATTR_GEN_AI_INPUT_MESSAGES, ATTR_GEN_AI_OPERATION_NAME, ATTR_GEN_AI_OUTPUT_MESSAGES, ATTR_GEN_AI_PROVIDER_NAME, ATTR_GEN_AI_REQUEST_MODEL, ATTR_GEN_AI_RESPONSE_MODEL, ATTR_GEN_AI_SYSTEM_INSTRUCTIONS, ATTR_GEN_AI_TOOL_DEFINITIONS, ATTR_GEN_AI_USAGE_CACHE_CREATION_INPUT_TOKENS, ATTR_GEN_AI_USAGE_CACHE_READ_INPUT_TOKENS, ATTR_GEN_AI_USAGE_INPUT_TOKENS, ATTR_GEN_AI_USAGE_OUTPUT_TOKENS, GEN_AI_PROVIDER_NAME_VALUE_ANTHROPIC } from '@opentelemetry/semantic-conventions/incubating'
 import { config } from '~/config'
 
 const tracer = trace.getTracer('therapy-bot')
@@ -56,7 +56,7 @@ export function captureSpanContext() {
 }
 export type GenAiOperationNameValue = 'chat' | 'create_agent' | 'embeddings' | 'execute_tool' | 'generate_content' | 'invoke_agent' | 'retrieval' | 'text_completion'
 
-export async function withGenAiSpan<T>(operationName: GenAiOperationNameValue, model: Model, attrs: Attributes, fn: (span: Span) => Promise<T>): Promise<T> {
+export async function withGenAiSpan<T>(operationName: GenAiOperationNameValue, model: AnthropicModel, attrs: Attributes, fn: (span: Span) => Promise<T>): Promise<T> {
   const spanName = `${operationName} ${model}`
 
   const genAiAttrs: Attributes = {
@@ -112,14 +112,19 @@ export function setGenAiResult(span: Span, data: {
 }): void {
   if (data.inputTokens != null)
     span.setAttribute(ATTR_GEN_AI_USAGE_INPUT_TOKENS, data.inputTokens)
+
   if (data.outputTokens != null)
     span.setAttribute(ATTR_GEN_AI_USAGE_OUTPUT_TOKENS, data.outputTokens)
+
   if (data.cacheReadInputTokens != null)
     span.setAttribute(ATTR_GEN_AI_USAGE_CACHE_READ_INPUT_TOKENS, data.cacheReadInputTokens)
+
   if (data.cacheCreationInputTokens != null)
     span.setAttribute(ATTR_GEN_AI_USAGE_CACHE_CREATION_INPUT_TOKENS, data.cacheCreationInputTokens)
+
   if (data.responseModel != null)
-    span.setAttribute('gen_ai.response.model', data.responseModel)
+    span.setAttribute(ATTR_GEN_AI_RESPONSE_MODEL, data.responseModel)
+
   if (data.totalCostUsd != null)
     span.setAttribute('gen_ai.usage.cost', data.totalCostUsd)
 

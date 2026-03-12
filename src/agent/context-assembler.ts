@@ -29,19 +29,16 @@ export async function assembleSystemPrompt(
 
   // Load patient profile
   const profileContent = await readProfile(ctx.profilePath)
+
   if (profileContent) {
     promptCtx.patientProfile = profileContent
   }
 
   // Load relationship profile for couples
   if (ctx.sessionType === 'couples') {
-    const relationshipPath = join(
-      config.DATA_DIR,
-      'couples',
-      String(ctx.chatId),
-      'RELATIONSHIP.md',
-    )
+    const relationshipPath = join(config.DATA_DIR, 'couples', ctx.chatId.toString(), 'RELATIONSHIP.md')
     const relContent = await readProfile(relationshipPath)
+
     if (relContent) {
       promptCtx.relationshipProfile = relContent
     }
@@ -49,6 +46,7 @@ export async function assembleSystemPrompt(
 
   // Load relevant artifacts (last 20, highest relevance)
   const artifacts = await getArtifactsByPatient(ctx.patientId)
+
   if (artifacts.length > 0) {
     const topArtifacts = artifacts
       .sort(

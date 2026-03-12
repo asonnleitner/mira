@@ -2,7 +2,8 @@ import { OTLPTraceExporter } from '@opentelemetry/exporter-trace-otlp-proto'
 import { resourceFromAttributes } from '@opentelemetry/resources'
 import { NodeSDK } from '@opentelemetry/sdk-node'
 import { BatchSpanProcessor, ConsoleSpanExporter, SimpleSpanProcessor } from '@opentelemetry/sdk-trace-node'
-import { ATTR_SERVICE_NAME, ATTR_SERVICE_VERSION } from '@opentelemetry/semantic-conventions'
+import { ATTR_SERVICE_NAME, ATTR_SERVICE_VERSION, ATTR_TELEMETRY_SDK_LANGUAGE } from '@opentelemetry/semantic-conventions'
+import { ATTR_DEPLOYMENT_ENVIRONMENT_NAME } from '@opentelemetry/semantic-conventions/incubating'
 import { config } from '~/config'
 import { logger } from '~/telemetry/logger'
 
@@ -22,8 +23,8 @@ export const sdk = new NodeSDK({
   resource: resourceFromAttributes({
     [ATTR_SERVICE_NAME]: config.OTEL_SERVICE_NAME,
     [ATTR_SERVICE_VERSION]: config.OTEL_SERVICE_VERSION,
-    'deployment.environment': config.ENVIRONMENT,
-    'telemetry.sdk.language': 'javascript',
+    [ATTR_DEPLOYMENT_ENVIRONMENT_NAME]: config.ENVIRONMENT,
+    [ATTR_TELEMETRY_SDK_LANGUAGE]: 'javascript',
     'telemetry.sdk.runtime': 'bun',
   }),
   spanProcessors: [spanProcessor],

@@ -46,17 +46,16 @@ export async function appendMessage(
 
 export async function readTranscript(filePath: string): Promise<string> {
   const file = Bun.file(filePath)
-  if (await file.exists()) {
+
+  if (await file.exists())
     return file.text()
-  }
+
   return ''
 }
 
-export async function readRecentMessages(
-  filePath: string,
-  count: number,
-): Promise<string> {
+export async function readRecentMessages(filePath: string, count: number): Promise<string> {
   const content = await readTranscript(filePath)
+
   if (!content)
     return ''
 

@@ -1,3 +1,4 @@
+import process from 'node:process'
 import { defineConfig } from 'drizzle-kit'
 
 export default defineConfig({
@@ -5,6 +6,6 @@ export default defineConfig({
   schema: './src/db/schema/index.ts',
   out: './drizzle',
   dbCredentials: {
-    url: 'sqlite.db',
+    url: process.env.DATABASE_URL ?? 'sqlite.db',
   },
 })

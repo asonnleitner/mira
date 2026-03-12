@@ -4,8 +4,9 @@ import * as z from 'zod'
 const envSchema = z.object({
   BOT_TOKEN: z.string(),
   ANTHROPIC_API_KEY: z.string(),
+  DATABASE_URL: z.string().default('sqlite.db'),
   DATA_DIR: z.string().default('./data'),
-  OTEL_SERVICE_NAME: z.string().default('therapy-bot'),
+  OTEL_SERVICE_NAME: z.string().default('mira-bot'),
   OTEL_SERVICE_VERSION: z.string().default('1.0.0'),
   OTEL_CAPTURE_CONTENT: z.coerce.boolean().default(false),
   OTEL_EXPORTER_OTLP_ENDPOINT: z.string().optional(),

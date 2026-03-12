@@ -1,17 +1,17 @@
-import type { Options, SDKResultSuccess } from '@anthropic-ai/claude-agent-sdk'
 import type { BotContext } from '~/bot/context'
 import type { PatientProfile } from '~/db/schema'
 import { join } from 'node:path'
-import { createSdkMcpServer, query, tool } from '@anthropic-ai/claude-agent-sdk'
+import { createSdkMcpServer, tool } from '@anthropic-ai/claude-agent-sdk'
 import { ATTR_GEN_AI_AGENT_NAME, ATTR_GEN_AI_CONVERSATION_ID, GEN_AI_OPERATION_NAME_VALUE_INVOKE_AGENT } from '@opentelemetry/semantic-conventions/incubating'
 import * as z from 'zod'
+import { tracedQuery } from '~/agent/query'
+import { replyMarkdownV2 } from '~/bot/utils/telegram-send'
 import { config } from '~/config'
-import { MODELS } from '~/constants'
+import { ANTHROPIC_MODEL_CLAUDE_SONNET, ATTR_TELEGRAM_USER_ID } from '~/constants'
 import { completeOnboarding, createPatient, findPatientByTelegramId } from '~/db/queries/patients'
 import { PatientProfileSchema } from '~/db/schema/patients'
 import { writeProfile } from '~/storage/profile'
 import { logger } from '~/telemetry/logger'
-import { setGenAiContext, setGenAiResult, withGenAiSpan } from '~/telemetry/tracing'
 
 interface OnboardingSession {
   sdkSessionId?: string
@@ -141,85 +141,56 @@ function createOnboardingTools(ctx: BotContext, telegramId: number) {
 }
 
 async function runOnboardingAgent(ctx: BotContext, telegramId: number, userMessage: string, sdkSessionId?: string): Promise<string> {
-  return withGenAiSpan(GEN_AI_OPERATION_NAME_VALUE_INVOKE_AGENT, MODELS.SONNET, {
-    [ATTR_GEN_AI_AGENT_NAME]: 'onboarding',
-    'telegram.user_id': telegramId,
-  }, async (span) => {
-    const { server } = createOnboardingTools(ctx, telegramId)
-    const languageCode = ctx.from?.language_code
+  const { server } = createOnboardingTools(ctx, telegramId)
+  const languageCode = ctx.from?.language_code
 
-    const languageHint = languageCode
-      ? `\nThe user's Telegram language is set to "${languageCode}". Consider starting in this language unless they write in a different one.`
-      : ''
+  const languageHint = languageCode
+    ? `\nThe user's Telegram language is set to "${languageCode}". Consider starting in this language unless they write in a different one.`
+    : ''
 
-    const systemPrompt = ONBOARDING_SYSTEM_PROMPT + languageHint
-    const allowedTools = ['mcp__onboarding-tools__complete_onboarding']
+  const systemPrompt = ONBOARDING_SYSTEM_PROMPT + languageHint
+  const allowedTools = ['mcp__onboarding-tools__complete_onboarding']
 
-    setGenAiContext(span, {
-      systemPrompt,
-      inputMessages: [{ role: 'user', content: userMessage }],
-      toolDefinitions: allowedTools.map(name => ({ name })),
-    })
+  const { response, sessionId: newSdkSessionId } = await tracedQuery(
+    {
+      operationName: GEN_AI_OPERATION_NAME_VALUE_INVOKE_AGENT,
+      label: 'onboarding',
+      attributes: {
+        [ATTR_GEN_AI_AGENT_NAME]: 'onboarding',
+        [ATTR_TELEGRAM_USER_ID]: telegramId,
+      },
+    },
+    {
+      prompt: userMessage,
+      options: {
+        systemPrompt,
+        model: ANTHROPIC_MODEL_CLAUDE_SONNET,
+        mcpServers: { 'onboarding-tools': server },
+        allowedTools,
+        tools: [],
+        maxTurns: 5,
+        maxBudgetUsd: 2,
+        persistSession: true,
+        permissionMode: 'acceptEdits',
+        stderr: (data: string) => logger.warn('[onboarding:stderr]', data),
+        ...(sdkSessionId ? { resume: sdkSessionId } : {}),
+      },
+    },
+    {
+      onSuccess: (result, span) => {
+        span.setAttribute(ATTR_GEN_AI_CONVERSATION_ID, result.sessionId)
+      },
+    },
+  )
 
-    let response = ''
-    let newSdkSessionId = ''
-    let resultMsg: SDKResultSuccess | undefined
+  // Update stored SDK session ID
+  const state = onboardingState.get(telegramId)
 
-    const options: Options = {
-      systemPrompt,
-      model: MODELS.SONNET,
-      mcpServers: { 'onboarding-tools': server },
-      allowedTools,
-      tools: [],
-      maxTurns: 5,
-      maxBudgetUsd: 0.10,
-      persistSession: true,
-      permissionMode: 'acceptEdits',
-      stderr: (data: string) => logger.warn('[onboarding:stderr]', data),
-      ...(sdkSessionId ? { resume: sdkSessionId } : {}),
-    }
+  if (state) {
+    state.sdkSessionId = newSdkSessionId
+  }
 
-    const q = query({ prompt: userMessage, options })
-
-    for await (const message of q) {
-      if (message.type === 'system' && message.subtype === 'init') {
-        const ownServers = new Set(Object.keys(options.mcpServers ?? {}))
-        const failedServers = message.mcp_servers.filter(s => s.status !== 'connected' && ownServers.has(s.name))
-        if (failedServers.length > 0) {
-          logger.error('[onboarding] MCP servers failed to connect:', failedServers)
-        }
-      }
-      else if (message.type === 'result' && message.subtype === 'success') {
-        response = message.result
-        newSdkSessionId = message.session_id
-        resultMsg = message
-      }
-      else if (message.type === 'result') {
-        logger.error('[onboarding] SDK error result:', message)
-      }
-    }
-
-    // Update stored SDK session ID
-    const state = onboardingState.get(telegramId)
-
-    if (state) {
-      state.sdkSessionId = newSdkSessionId
-    }
-
-    span.setAttribute(ATTR_GEN_AI_CONVERSATION_ID, newSdkSessionId)
-
-    setGenAiResult(span, {
-      outputMessages: [{ role: 'assistant', content: response }],
-      inputTokens: resultMsg?.usage.input_tokens,
-      outputTokens: resultMsg?.usage.output_tokens,
-      cacheReadInputTokens: resultMsg?.usage.cache_read_input_tokens,
-      cacheCreationInputTokens: resultMsg?.usage.cache_creation_input_tokens,
-      totalCostUsd: resultMsg?.total_cost_usd,
-      responseModel: MODELS.SONNET,
-    })
-
-    return response
-  })
+  return response
 }
 
 export async function startOnboarding(ctx: BotContext): Promise<void> {
@@ -248,7 +219,7 @@ export async function startOnboarding(ctx: BotContext): Promise<void> {
   )
 
   if (response) {
-    await ctx.reply(response, { parse_mode: 'MarkdownV2' })
+    await replyMarkdownV2(ctx, response)
   }
 }
 
@@ -270,7 +241,6 @@ export async function handleOnboardingMessage(ctx: BotContext): Promise<void> {
 
   const response = await runOnboardingAgent(ctx, telegramId, text, state.sdkSessionId)
 
-  if (response) {
-    await ctx.reply(response, { parse_mode: 'MarkdownV2' })
-  }
+  if (response)
+    await replyMarkdownV2(ctx, response)
 }

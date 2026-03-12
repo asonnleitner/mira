@@ -1,84 +1,58 @@
-import type { SDKResultSuccess } from '@anthropic-ai/claude-agent-sdk'
-import { query } from '@anthropic-ai/claude-agent-sdk'
 import { GEN_AI_OPERATION_NAME_VALUE_CHAT } from '@opentelemetry/semantic-conventions/incubating'
-import { MODELS } from '~/constants'
+import { tracedQuery } from '~/agent/query'
+import { ANTHROPIC_MODEL_CLAUDE_SONNET, ATTR_BOT_PURPOSE } from '~/constants'
 import { logger } from '~/telemetry/logger'
-import { setGenAiContext, setGenAiResult, withGenAiSpan } from '~/telemetry/tracing'
 
 export async function generateMessage(opts: {
   purpose: string
   context?: Record<string, unknown>
   language?: string
 }): Promise<string> {
-  return withGenAiSpan(GEN_AI_OPERATION_NAME_VALUE_CHAT, MODELS.HAIKU, {
-    'bot.purpose': opts.purpose,
-  }, async (span) => {
-    const languageHint = opts.language && opts.language !== 'auto'
-      ? `Respond in ${opts.language}.`
-      : 'Respond in the same language as the user context suggests, defaulting to English if unclear.'
+  const languageHint = opts.language && opts.language !== 'auto'
+    ? `Respond in ${opts.language}.`
+    : 'Respond in the same language as the user context suggests, defaulting to English if unclear.'
 
-    const systemPrompt = [
-      'You are Mira, an extremely experienced therapist. You are a real person. A warm, perceptive woman. Generate a single short message for a Telegram bot.',
-      'Format your response using Telegram MarkdownV2. Use *bold* (single asterisk) for emphasis. Escape these characters with \\ when literal: _ * [ ] ( ) ~ ` > # + - = | { } . ! — No headers, no quotes, no meta commentary.',
-      'Keep it concise (1-3 sentences max).',
-      'Be warm and professional.',
-      languageHint,
-    ].join(' ')
+  const systemPrompt = [
+    'You are Mira, an extremely experienced therapist. You are a real person. A warm, perceptive woman. Generate a single short message for a Telegram bot.',
+    'Format your response using Telegram MarkdownV2. Use *bold* (single asterisk) for emphasis. Escape these characters with \\ when literal: _ * [ ] ( ) ~ ` > # + - = | { } . ! — No headers, no quotes, no meta commentary.',
+    'Keep it concise (1-3 sentences max).',
+    'Be warm and professional.',
+    languageHint,
+  ].join(' ')
 
-    const prompt = opts.context
-      ? `Purpose: ${opts.purpose}\nContext: ${JSON.stringify(opts.context)}`
-      : `Purpose: ${opts.purpose}`
+  const prompt = opts.context
+    ? `Purpose: ${opts.purpose}\nContext: ${JSON.stringify(opts.context)}`
+    : `Purpose: ${opts.purpose}`
 
-    setGenAiContext(span, {
-      systemPrompt,
-      inputMessages: [{ role: 'user', content: prompt }],
-      toolDefinitions: [],
-    })
-
-    try {
-      let response = ''
-      let resultMsg: SDKResultSuccess | undefined
-
-      const q = query({
+  try {
+    const { response } = await tracedQuery(
+      {
+        operationName: GEN_AI_OPERATION_NAME_VALUE_CHAT,
+        label: 'messages',
+        attributes: {
+          [ATTR_BOT_PURPOSE]: opts.purpose,
+        },
+      },
+      {
         prompt,
         options: {
           systemPrompt,
-          model: MODELS.HAIKU,
+          model: ANTHROPIC_MODEL_CLAUDE_SONNET,
           maxTurns: 1,
-          maxBudgetUsd: 0.005,
+          maxBudgetUsd: 1,
           tools: [],
           permissionMode: 'acceptEdits',
           stderr: (data: string) => logger.warn('[messages:stderr]', data),
         },
-      })
+      },
+    )
 
-      for await (const message of q) {
-        if (message.type === 'result' && message.subtype === 'success') {
-          response = message.result
-          resultMsg = message
-        }
-        else if (message.type === 'result') {
-          logger.error('[messages] SDK error result:', message)
-        }
-      }
-
-      setGenAiResult(span, {
-        outputMessages: [{ role: 'assistant', content: response }],
-        inputTokens: resultMsg?.usage.input_tokens,
-        outputTokens: resultMsg?.usage.output_tokens,
-        cacheReadInputTokens: resultMsg?.usage.cache_read_input_tokens,
-        cacheCreationInputTokens: resultMsg?.usage.cache_creation_input_tokens,
-        totalCostUsd: resultMsg?.total_cost_usd,
-        responseModel: MODELS.HAIKU,
-      })
-
-      return response || getFallback(opts.purpose)
-    }
-    catch (err) {
-      logger.error('generateMessage failed:', err)
-      return getFallback(opts.purpose)
-    }
-  })
+    return response || getFallback(opts.purpose)
+  }
+  catch (err) {
+    logger.error('generateMessage failed:', err)
+    return getFallback(opts.purpose)
+  }
 }
 
 function getFallback(purpose: string): string {

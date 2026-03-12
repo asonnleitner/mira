@@ -1,6 +1,8 @@
 import type { BotContext } from '~/bot/context'
 import { generateMessage } from '~/agent/messages'
 import { startOnboarding } from '~/bot/handlers/onboarding'
+import { replyMarkdownV2 } from '~/bot/utils/telegram-send'
+import { ATTR_BOT_COMMAND } from '~/constants'
 import { findPatientByTelegramId } from '~/db/queries/patients'
 import { findActiveSession, getSessionCount, updateSessionStatus } from '~/db/queries/sessions'
 import { withSpan } from '~/telemetry/tracing'
@@ -10,7 +12,7 @@ function getLanguage(ctx: BotContext, patient?: { preferredLanguage?: string | n
 }
 
 export async function handleStart(ctx: BotContext): Promise<void> {
-  await withSpan('bot.command.start', { 'bot.command': 'start' }, async () => {
+  await withSpan('bot.command.start', { [ATTR_BOT_COMMAND]: 'start' }, async () => {
     const telegramId = ctx.from!.id
     const patient = await findPatientByTelegramId(telegramId)
 
@@ -27,12 +29,12 @@ export async function handleStart(ctx: BotContext): Promise<void> {
       language: getLanguage(ctx, patient),
     })
 
-    await ctx.reply(msg, { parse_mode: 'MarkdownV2' })
+    await replyMarkdownV2(ctx, msg)
   })
 }
 
 export async function handleStatus(ctx: BotContext): Promise<void> {
-  await withSpan('bot.command.status', { 'bot.command': 'status' }, async () => {
+  await withSpan('bot.command.status', { [ATTR_BOT_COMMAND]: 'status' }, async () => {
     const chatId = ctx.chat!.id
     const patient = await findPatientByTelegramId(ctx.from!.id)
     const session = await findActiveSession(chatId)
@@ -42,7 +44,7 @@ export async function handleStatus(ctx: BotContext): Promise<void> {
         purpose: 'no_active_session',
         language: getLanguage(ctx, patient),
       })
-      await ctx.reply(msg, { parse_mode: 'MarkdownV2' })
+      await replyMarkdownV2(ctx, msg)
       return
     }
 
@@ -62,12 +64,12 @@ export async function handleStatus(ctx: BotContext): Promise<void> {
       language: getLanguage(ctx, patient),
     })
 
-    await ctx.reply(msg, { parse_mode: 'MarkdownV2' })
+    await replyMarkdownV2(ctx, msg)
   })
 }
 
 export async function handlePause(ctx: BotContext): Promise<void> {
-  await withSpan('bot.command.pause', { 'bot.command': 'pause' }, async () => {
+  await withSpan('bot.command.pause', { [ATTR_BOT_COMMAND]: 'pause' }, async () => {
     const chatId = ctx.chat!.id
     const patient = await findPatientByTelegramId(ctx.from!.id)
     const session = await findActiveSession(chatId)
@@ -78,7 +80,7 @@ export async function handlePause(ctx: BotContext): Promise<void> {
         context: { action: 'pause' },
         language: getLanguage(ctx, patient),
       })
-      await ctx.reply(msg, { parse_mode: 'MarkdownV2' })
+      await replyMarkdownV2(ctx, msg)
       return
     }
 
@@ -89,12 +91,12 @@ export async function handlePause(ctx: BotContext): Promise<void> {
       language: getLanguage(ctx, patient),
     })
 
-    await ctx.reply(msg, { parse_mode: 'MarkdownV2' })
+    await replyMarkdownV2(ctx, msg)
   })
 }
 
 export async function handleResume(ctx: BotContext): Promise<void> {
-  await withSpan('bot.command.resume', { 'bot.command': 'resume' }, async () => {
+  await withSpan('bot.command.resume', { [ATTR_BOT_COMMAND]: 'resume' }, async () => {
     const chatId = ctx.chat!.id
     const patient = await findPatientByTelegramId(ctx.from!.id)
     const sessions = await getSessionCount(chatId)
@@ -105,7 +107,7 @@ export async function handleResume(ctx: BotContext): Promise<void> {
         purpose: 'no_paused_session',
         language: getLanguage(ctx, patient),
       })
-      await ctx.reply(msg, { parse_mode: 'MarkdownV2' })
+      await replyMarkdownV2(ctx, msg)
       return
     }
 
@@ -117,12 +119,12 @@ export async function handleResume(ctx: BotContext): Promise<void> {
       language: getLanguage(ctx, patient),
     })
 
-    await ctx.reply(msg, { parse_mode: 'MarkdownV2' })
+    await replyMarkdownV2(ctx, msg)
   })
 }
 
 export async function handleHistory(ctx: BotContext): Promise<void> {
-  await withSpan('bot.command.history', { 'bot.command': 'history' }, async () => {
+  await withSpan('bot.command.history', { [ATTR_BOT_COMMAND]: 'history' }, async () => {
     const chatId = ctx.chat!.id
     const patient = await findPatientByTelegramId(ctx.from!.id)
     const sessions = await getSessionCount(chatId)
@@ -132,7 +134,7 @@ export async function handleHistory(ctx: BotContext): Promise<void> {
         purpose: 'no_history',
         language: getLanguage(ctx, patient),
       })
-      await ctx.reply(msg, { parse_mode: 'MarkdownV2' })
+      await replyMarkdownV2(ctx, msg)
       return
     }
 
@@ -157,6 +159,6 @@ export async function handleHistory(ctx: BotContext): Promise<void> {
       language: getLanguage(ctx, patient),
     })
 
-    await ctx.reply(msg, { parse_mode: 'MarkdownV2' })
+    await replyMarkdownV2(ctx, msg)
   })
 }
