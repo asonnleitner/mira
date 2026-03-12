@@ -1,0 +1,34 @@
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          script: |
+            cd ${{ secrets.DEPLOY_PATH }}
+            git pull origin main
+            docker compose up --build -d
+
+            echo "Waiting for health check..."
+            for i in $(seq 1 30); do
+              STATUS=$(docker compose ps bot --format '{{.Health}}' 2>/dev/null)
+              if [ "$STATUS" = "healthy" ]; then
+                echo "Bot is healthy after ${i}s"
+                exit 0
+              fi
+              sleep 1
+            done
+            echo "Health check failed within 30s"
+            docker compose logs bot --tail 50
+            exit 1

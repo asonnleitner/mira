@@ -24,6 +24,7 @@ export async function assembleSystemPrompt(
 ): Promise<string> {
   const promptCtx: PromptContext = {
     sessionType: ctx.sessionType,
+    telegramId: ctx.telegramId,
     preferredLanguage: ctx.preferredLanguage,
   }
 

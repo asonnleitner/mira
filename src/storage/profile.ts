@@ -9,17 +9,13 @@ export async function writeProfile(
 ): Promise<void> {
   await mkdir(dirname(filePath), { recursive: true })
 
-  const now = new Date().toISOString()
+  const now = new Date().toISOString().split('T')[0]
 
   const sections: string[] = [
-    `# Patient Profile: ${profile.fullName || 'Unknown'}`,
+    `# Patient Profile`,
     '',
-    `**Telegram ID:** ${telegramId}`,
-    `**Last Updated:** ${now}`,
+    `**Name:** ${profile.fullName || 'Unknown'}`,
   ]
-
-  if (profile.preferredLanguage)
-    sections.push(`**Preferred Language:** ${profile.preferredLanguage}`)
 
   if (profile.dateOfBirth)
     sections.push(`**Date of Birth:** ${profile.dateOfBirth}`)
@@ -33,39 +29,15 @@ export async function writeProfile(
   if (profile.relationshipStatus)
     sections.push(`**Relationship Status:** ${profile.relationshipStatus}`)
 
-  if (profile.attachmentStyle) {
-    sections.push('', '## Attachment Style', profile.attachmentStyle)
-  }
+  if (profile.preferredLanguage)
+    sections.push(`**Preferred Language:** ${profile.preferredLanguage}`)
 
-  if (profile.recurringThemes?.length) {
-    sections.push('', '## Recurring Themes')
-
-    for (const t of profile.recurringThemes) {
-      sections.push(`- ${t.theme} (${t.frequency} mentions, trend: ${t.trend})`)
-    }
-  }
-
-  if (profile.copingPatterns?.length) {
-    sections.push('', '## Coping Patterns')
-
-    for (const p of profile.copingPatterns) {
-      sections.push(`- ${p}`)
-    }
-  }
+  sections.push(`**Profile Created:** ${now}`)
 
   if (profile.therapyGoals?.length) {
-    sections.push('', '## Goals')
-
-    profile.therapyGoals.forEach((g, i) => {
-      sections.push(`${i + 1}. ${g}`)
-    })
-  }
-
-  if (profile.triggers?.length) {
-    sections.push('', '## Triggers')
-
-    for (const t of profile.triggers) {
-      sections.push(`- ${t}`)
+    sections.push('', '## Therapy Goals')
+    for (const g of profile.therapyGoals) {
+      sections.push(`- ${g}`)
     }
   }
 
@@ -77,15 +49,15 @@ export async function writeProfile(
     )
   }
 
-  if (profile.progressNotes?.length) {
-    sections.push('', '## Progress Notes')
-
-    for (const n of profile.progressNotes) {
-      sections.push(`- ${n.date}: ${n.note}`)
-    }
-  }
-
-  sections.push('')
+  sections.push(
+    '',
+    '## Clinical Observations',
+    '*To be updated as sessions progress.*',
+    '',
+    '## Session Notes',
+    '*To be updated after each significant exchange.*',
+    '',
+  )
 
   await Bun.write(filePath, sections.join('\n'))
 }

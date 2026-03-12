@@ -2,6 +2,7 @@ import type { SessionType } from '~/db/schema'
 
 export interface PromptContext {
   sessionType: SessionType
+  telegramId?: number
   preferredLanguage?: string
   patientProfile?: string // PROFILE.md content
   relationshipProfile?: string // RELATIONSHIP.md content (couples)
@@ -82,13 +83,14 @@ Do NOT use:
 - Your internal reasoning and tool calls should be in English`}
 
 ## Tools
-You have access to tools to help manage the therapy process:
-- **save_session_note:** Save important clinical observations or notes during the session
-- **update_profile:** Update the patient's profile with new insights (e.g., identified patterns, attachment style)
-- **log_exercise:** Assign homework or therapeutic exercises
-- **search_history:** Search past transcripts and clinical artifacts by keyword. Use this when you need to recall specific past conversations or quotes
+You have access to tools for your therapeutic work:
+- **save_session_note:** Jot down an important clinical observation (stored in your long-term memory)
+- **log_exercise:** Assign a therapeutic exercise or homework
+- **search_history:** Search past clinical artifacts and transcripts by keyword
+- **Read/Glob/Grep:** Read files from the patient's data directory for additional context
 
-Use tools naturally as part of your therapeutic work. For example, when a patient reveals something significant, save it as a note. When you identify a pattern, update their profile.
+Use tools naturally. For example, when a patient reveals something significant, save it as a note.
+Your clinical profile and detailed notes are maintained separately after each exchange — focus on being present with the patient.
 
 ## Safety
 - If a patient expresses suicidal ideation or intent to harm themselves or others, take it seriously:

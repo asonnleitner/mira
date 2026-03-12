@@ -3,7 +3,7 @@ import type { SessionContext } from '~/agent/context-assembler'
 import type { BotContext } from '~/bot/context'
 import type { SessionType } from '~/db/schema'
 import { join } from 'node:path'
-import { extractArtifacts } from '~/agent/artifact-extractor'
+import { runNoteTaker } from '~/agent/artifact-extractor'
 import { continueTherapySession, StaleSessionError, startTherapySession } from '~/agent/therapist'
 import { handleOnboardingMessage, isOnboarding, startOnboarding } from '~/bot/handlers/onboarding'
 import { detectChatMode } from '~/bot/router'
@@ -248,7 +248,7 @@ async function processTherapyMessage(
       chatId,
       patientId: primaryPatientId,
       telegramId,
-      preferredLanguage: patient?.preferredLanguage ?? patient?.profile?.preferredLanguage ?? undefined,
+      preferredLanguage: patient?.preferredLanguage ?? undefined,
       sdkSessionId: session.sdkSessionId ?? undefined,
       transcriptPath: session.transcriptPath,
       profilePath,
@@ -315,9 +315,9 @@ async function processTherapyMessage(
     // Update session metadata
     await updateSessionLastMessage(session.id)
 
-    // Run post-response pipeline async (don't block user)
-    extractArtifacts(sessionCtx, combinedMessage, response).catch(err =>
-      logger.error('Artifact extraction error:', err),
+    // Run note-taker async (don't block user)
+    runNoteTaker(sessionCtx, combinedMessage, response).catch(err =>
+      logger.error('Note-taker error:', err),
     )
   }
   finally {

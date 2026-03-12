@@ -3,12 +3,17 @@ import { sdk } from '~/telemetry/config'
 import process from 'node:process'
 import { logger } from '~/telemetry/logger'
 import { createBot } from './bot/bot'
+import { startHealthServer } from './health'
 
 const bot = createBot()
+let healthServer: ReturnType<typeof startHealthServer> | undefined
 
 // Start bot with long polling
 async function main() {
   try {
+    healthServer = startHealthServer()
+    logger.info(`Health server listening on port ${healthServer.port}`)
+
     await bot.start({
       onStart: (botInfo) => {
         logger.info(`Bot @${botInfo.username} started!`)
@@ -24,6 +29,7 @@ async function main() {
 async function shutdown() {
   logger.warn('Shutting down...')
   try {
+    healthServer?.stop()
     await bot.stop()
   }
   catch (err) {

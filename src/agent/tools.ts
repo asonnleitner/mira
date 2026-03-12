@@ -1,17 +1,13 @@
-import type { PatientProfile } from '~/db/schema'
 import { createSdkMcpServer, tool } from '@anthropic-ai/claude-agent-sdk'
 import * as z from 'zod'
 import { saveArtifact, searchArtifacts } from '~/db/queries/artifacts'
-import { updatePatientProfile } from '~/db/queries/patients'
 import { artifactTypeValues } from '~/db/schema'
-import { writeProfile } from '~/storage/profile'
 import { readTranscript } from '~/storage/transcript'
 
 export interface ToolContext {
   sessionId: number
   patientId: number
   telegramId: number
-  profilePath: string
   transcriptPath: string
 }
 
@@ -51,86 +47,6 @@ export function createTherapyTools(ctx: ToolContext) {
           return {
             content: [
               { type: 'text' as const, text: `Note saved: ${args.type}` },
-            ],
-          }
-        },
-        { annotations: { readOnlyHint: false } },
-      ),
-
-      tool(
-        'update_profile',
-        'Update the patient\'s clinical profile with a new insight. Use when you identify attachment style, recurring themes, coping patterns, triggers, or progress.',
-        {
-          field: z.enum([
-            'attachmentStyle',
-            'recurringThemes',
-            'copingPatterns',
-            'triggers',
-            'progressNotes',
-          ]),
-          value: z
-            .string()
-            .describe('The value to add/set. For array fields, this adds a new entry.'),
-        },
-        async (args) => {
-          const patient = await updatePatientProfile(ctx.telegramId, {})
-          if (!patient) {
-            return {
-              content: [
-                { type: 'text' as const, text: 'Error: patient not found' },
-              ],
-              isError: true,
-            }
-          }
-
-          const profile: PatientProfile = (patient.profile as PatientProfile) ?? {}
-
-          if (args.field === 'attachmentStyle') {
-            profile.attachmentStyle = args.value
-          }
-          else if (args.field === 'recurringThemes') {
-            const themes = profile.recurringThemes ?? []
-            const existing = themes.find(t => t.theme === args.value)
-            if (existing) {
-              existing.frequency++
-            }
-            else {
-              themes.push({
-                theme: args.value,
-                frequency: 1,
-                trend: 'new',
-              })
-            }
-            profile.recurringThemes = themes
-          }
-          else if (args.field === 'copingPatterns') {
-            profile.copingPatterns = [
-              ...(profile.copingPatterns ?? []),
-              args.value,
-            ]
-          }
-          else if (args.field === 'triggers') {
-            profile.triggers = [...(profile.triggers ?? []), args.value]
-          }
-          else if (args.field === 'progressNotes') {
-            profile.progressNotes = [
-              ...(profile.progressNotes ?? []),
-              {
-                date: new Date().toISOString().split('T')[0],
-                note: args.value,
-              },
-            ]
-          }
-
-          await updatePatientProfile(ctx.telegramId, profile)
-          await writeProfile(ctx.profilePath, ctx.telegramId, profile)
-
-          return {
-            content: [
-              {
-                type: 'text' as const,
-                text: `Profile updated: ${args.field} = ${args.value}`,
-              },
             ],
           }
         },

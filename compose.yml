@@ -22,6 +22,8 @@ services:
     depends_on:
       jaeger:
         condition: service_started
+    expose:
+      - '3000'
     restart: unless-stopped
     logging: *default-logging
     networks:
@@ -33,7 +35,6 @@ services:
       - ALL
     security_opt:
       - no-new-privileges:true
-      - seccomp=docker/seccomp-profile.json
     mem_limit: 2g
     cpus: 2
     pids_limit: 150

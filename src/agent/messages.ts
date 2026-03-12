@@ -41,7 +41,7 @@ export async function generateMessage(opts: {
           maxTurns: 1,
           maxBudgetUsd: 1,
           tools: [],
-          permissionMode: 'acceptEdits',
+          permissionMode: 'dontAsk',
           stderr: (data: string) => logger.warn('[messages:stderr]', data),
         },
       },

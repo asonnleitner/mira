@@ -1,12 +1,29 @@
 import type { SDKResultError } from '@anthropic-ai/claude-agent-sdk'
 import type { SessionContext } from '~/agent/context-assembler'
 import type { ToolContext } from '~/agent/tools'
+import { resolve } from 'node:path'
 import { ATTR_GEN_AI_AGENT_NAME, ATTR_GEN_AI_CONVERSATION_ID, GEN_AI_OPERATION_NAME_VALUE_INVOKE_AGENT } from '@opentelemetry/semantic-conventions/incubating'
 import { assembleSystemPrompt } from '~/agent/context-assembler'
+import { auditToolUse, createFileSecurityHook } from '~/agent/hooks'
 import { tracedQuery } from '~/agent/query'
 import { createTherapyTools } from '~/agent/tools'
 import { ANTHROPIC_MODEL_CLAUDE_SONNET, ATTR_BOT_PATIENT_ID, ATTR_BOT_SESSION_ID, ATTR_TELEGRAM_USER_ID } from '~/constants'
 import { logger } from '~/telemetry/logger'
+
+function createTherapistHooks(dataDir: string, telegramId: number) {
+  const allowedBase = resolve(dataDir, 'patients', String(telegramId))
+
+  return {
+    PreToolUse: [{
+      matcher: '^(Read|Glob|Grep)$',
+      hooks: [createFileSecurityHook(allowedBase, dataDir)],
+    }],
+    PostToolUse: [{
+      matcher: '^(mcp__therapy-tools__|Read|Glob|Grep)',
+      hooks: [auditToolUse],
+    }],
+  }
+}
 
 export class StaleSessionError extends Error {
   constructor(public readonly sdkSessionId: string, public readonly errors: string[]) {
@@ -17,9 +34,11 @@ export class StaleSessionError extends Error {
 
 const ALLOWED_TOOLS = [
   'mcp__therapy-tools__save_session_note',
-  'mcp__therapy-tools__update_profile',
   'mcp__therapy-tools__log_exercise',
   'mcp__therapy-tools__search_history',
+  'Read',
+  'Glob',
+  'Grep',
 ]
 
 export async function startTherapySession(
@@ -31,12 +50,12 @@ export async function startTherapySession(
     sessionId: sessionCtx.sessionId,
     patientId: sessionCtx.patientId,
     telegramId: sessionCtx.telegramId,
-    profilePath: sessionCtx.profilePath,
     transcriptPath: sessionCtx.transcriptPath,
   }
 
   const tools = createTherapyTools(toolCtx)
   const systemPrompt = await assembleSystemPrompt(sessionCtx)
+  const hooks = createTherapistHooks(sessionCtx.dataDir, sessionCtx.telegramId)
 
   const { response, sessionId } = await tracedQuery(
     {
@@ -56,13 +75,14 @@ export async function startTherapySession(
         model: ANTHROPIC_MODEL_CLAUDE_SONNET,
         mcpServers: { 'therapy-tools': tools },
         allowedTools: ALLOWED_TOOLS,
-        tools: [],
+        tools: ['Read', 'Glob', 'Grep'],
         maxTurns: 3,
         maxBudgetUsd: 5,
         cwd: sessionCtx.dataDir,
         persistSession: true,
         abortController,
-        permissionMode: 'acceptEdits',
+        permissionMode: 'dontAsk',
+        hooks,
         stderr: (data: string) => logger.warn('[therapist:stderr]', data),
       },
     },
@@ -86,12 +106,12 @@ export async function continueTherapySession(
     sessionId: sessionCtx.sessionId,
     patientId: sessionCtx.patientId,
     telegramId: sessionCtx.telegramId,
-    profilePath: sessionCtx.profilePath,
     transcriptPath: sessionCtx.transcriptPath,
   }
 
   const tools = createTherapyTools(toolCtx)
   const systemPrompt = await assembleSystemPrompt(sessionCtx)
+  const hooks = createTherapistHooks(sessionCtx.dataDir, sessionCtx.telegramId)
 
   const { response } = await tracedQuery(
     {
@@ -113,11 +133,13 @@ export async function continueTherapySession(
         model: ANTHROPIC_MODEL_CLAUDE_SONNET,
         mcpServers: { 'therapy-tools': tools },
         allowedTools: ALLOWED_TOOLS,
-        tools: [],
+        tools: ['Read', 'Glob', 'Grep'],
         maxTurns: 3,
         maxBudgetUsd: 5,
+        cwd: sessionCtx.dataDir,
         abortController,
-        permissionMode: 'acceptEdits',
+        permissionMode: 'dontAsk',
+        hooks,
         stderr: (data: string) => logger.warn('[therapist:stderr]', data),
       },
     },

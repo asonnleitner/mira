@@ -12,6 +12,7 @@ const envSchema = z.object({
   OTEL_EXPORTER_OTLP_ENDPOINT: z.string().optional(),
   ENVIRONMENT: z.string().default('development'),
   LOG_LEVEL: z.string().default('info'),
+  PORT: z.coerce.number().default(3000),
 })
 
 const parsed = envSchema.safeParse(process.env)

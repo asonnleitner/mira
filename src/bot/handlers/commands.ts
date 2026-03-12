@@ -7,8 +7,8 @@ import { findPatientByTelegramId } from '~/db/queries/patients'
 import { findActiveSession, getSessionCount, updateSessionStatus } from '~/db/queries/sessions'
 import { withSpan } from '~/telemetry/tracing'
 
-function getLanguage(ctx: BotContext, patient?: { preferredLanguage?: string | null, profile?: { preferredLanguage?: string } | null } | null): string {
-  return patient?.preferredLanguage ?? patient?.profile?.preferredLanguage ?? ctx.from?.language_code ?? 'auto'
+function getLanguage(ctx: BotContext, patient?: { preferredLanguage?: string | null } | null): string {
+  return patient?.preferredLanguage ?? ctx.from?.language_code ?? 'auto'
 }
 
 export async function handleStart(ctx: BotContext): Promise<void> {

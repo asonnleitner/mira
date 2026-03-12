@@ -1,43 +1,100 @@
 import type { SessionContext } from '~/agent/context-assembler'
-import type { PatientProfile } from '~/db/schema'
-import { dirname, join } from 'node:path'
-import { ATTR_GEN_AI_OUTPUT_TYPE, GEN_AI_OPERATION_NAME_VALUE_CHAT, GEN_AI_OUTPUT_TYPE_VALUE_JSON } from '@opentelemetry/semantic-conventions/incubating'
+import { resolve } from 'node:path'
+import { createSdkMcpServer, tool } from '@anthropic-ai/claude-agent-sdk'
+import { ATTR_GEN_AI_AGENT_NAME, GEN_AI_OPERATION_NAME_VALUE_INVOKE_AGENT } from '@opentelemetry/semantic-conventions/incubating'
 import * as z from 'zod'
+import { auditToolUse, createFileSecurityHook } from '~/agent/hooks'
 import { tracedQuery } from '~/agent/query'
 import { ANTHROPIC_MODEL_CLAUDE_SONNET, ATTR_BOT_SESSION_ID } from '~/constants'
 import { saveArtifact } from '~/db/queries/artifacts'
-import { updatePatientProfile } from '~/db/queries/patients'
 import { artifactTypeValues } from '~/db/schema'
-import { soapSchema } from '~/db/zod'
-import { readProfile, writeProfile } from '~/storage/profile'
-import { writeSoapNote } from '~/storage/soap-notes'
 import { logger } from '~/telemetry/logger'
 
-const ArtifactSchema = z.object({
-  artifacts: z.array(
-    z.object({
-      type: z.enum(artifactTypeValues),
-      content: z.string(),
-      verbatimQuote: z.string().optional(),
-      clinicalRelevance: z.number().min(1).max(10),
-    }),
-  ),
-  profileUpdates: z.object({
-    newThemes: z.array(z.string()).optional(),
-    newTriggers: z.array(z.string()).optional(),
-    progressNote: z.string().optional(),
-    riskLevelChange: z.enum(['none', 'increased', 'decreased']).optional(),
-  }),
-  shouldGenerateSoapNote: z.boolean(),
-})
+const NOTE_TAKER_SYSTEM_PROMPT = `You are a clinical documentation assistant reviewing a therapy exchange between Mira (therapist) and a patient.
 
-export async function extractArtifacts(
-  ctx: SessionContext,
+Your responsibilities:
+1. Read the patient's current profile (PROFILE.md)
+2. Determine if this exchange contains clinically significant information
+3. If yes: update PROFILE.md with new observations, themes, patterns, or progress notes
+4. Save specific artifacts (disclosures, insights, emotional moments, homework) using save_artifact
+5. If enough material has accumulated since the last summary, write a brief session summary
+
+Guidelines for PROFILE.md:
+- Evolve the document structure organically
+- Write as a clinician would — precise, professional, but capture nuance
+- Don't rewrite the entire file — read it first, then make targeted updates
+- Add new sections as needed (e.g., "Risk Assessment", "Treatment Progress", "Key Relationships")
+- Update existing sections when new information refines understanding
+- Include dates on progress entries
+
+Guidelines for artifacts:
+- Save only genuinely significant observations
+- Include verbatim quotes when the patient's exact words matter
+- Rate clinical relevance honestly (1-10)
+
+Guidelines for summaries:
+- Write a summary when the exchange represents a meaningful therapeutic moment
+- Append under a "## Session Notes" section in PROFILE.md with a date
+- Format as a brief clinical note (2-4 sentences), not a full SOAP note
+
+Not every exchange warrants updates. Routine pleasantries or brief check-ins may need no documentation.`
+
+function createNoteTakerTools(ctx: SessionContext) {
+  return createSdkMcpServer({
+    name: 'note-taker-tools',
+    version: '1.0.0',
+    tools: [
+      tool(
+        'save_artifact',
+        'Save a clinically significant artifact from the therapy exchange.',
+        {
+          type: z.enum(artifactTypeValues),
+          content: z.string().describe('Description of the clinical observation'),
+          verbatimQuote: z.string().optional().describe('Exact quote from the patient, if relevant'),
+          clinicalRelevance: z.number().min(1).max(10).describe('Clinical relevance score 1-10'),
+        },
+        async (args) => {
+          await saveArtifact({
+            sessionId: ctx.sessionId,
+            patientId: ctx.patientId,
+            type: args.type,
+            content: args.content,
+            verbatimQuote: args.verbatimQuote,
+            clinicalRelevance: args.clinicalRelevance,
+          })
+          return {
+            content: [{ type: 'text' as const, text: `Artifact saved: ${args.type}` }],
+          }
+        },
+        { annotations: { readOnlyHint: false } },
+      ),
+    ],
+  })
+}
+
+function createNoteTakerHooks(dataDir: string, telegramId: number) {
+  const allowedBase = resolve(dataDir, 'patients', String(telegramId))
+
+  return {
+    PreToolUse: [{
+      matcher: '^(Read|Write)$',
+      hooks: [createFileSecurityHook(allowedBase, dataDir)],
+    }],
+    PostToolUse: [{
+      matcher: '^(mcp__note-taker-tools__|Read|Write)',
+      hooks: [auditToolUse],
+    }],
+  }
+}
+
+function buildNoteTakerPrompt(
   patientMessage: string,
   therapistResponse: string,
-): Promise<void> {
-  try {
-    const prompt = `Analyze this therapy exchange and extract clinical artifacts.
+  ctx: SessionContext,
+): string {
+  const profilePath = `patients/${ctx.telegramId}/PROFILE.md`
+
+  return `Review this therapy exchange and update clinical documentation as needed.
 
 Patient message:
 """
@@ -49,174 +106,54 @@ Therapist response:
 ${therapistResponse}
 """
 
-Extract any clinically significant artifacts (disclosures, insights, emotions, patterns, etc.).
-Also identify any profile updates needed and whether a SOAP note should be generated (only if this feels like a natural session ending point).`
+Session type: ${ctx.sessionType}
 
-    const systemPrompt = 'You are a clinical note-taking assistant. Extract therapy artifacts from the exchange. Be precise and clinical. Only extract genuinely significant items. Not every message warrants artifacts.'
+The patient's profile is at: ${profilePath}
+Read it first, then decide what updates (if any) are warranted.`
+}
 
-    const { structuredOutput } = await tracedQuery(
+export async function runNoteTaker(
+  ctx: SessionContext,
+  patientMessage: string,
+  therapistResponse: string,
+): Promise<void> {
+  try {
+    const mcpTools = createNoteTakerTools(ctx)
+    const hooks = createNoteTakerHooks(ctx.dataDir, ctx.telegramId)
+
+    await tracedQuery(
       {
-        operationName: GEN_AI_OPERATION_NAME_VALUE_CHAT,
-        label: 'artifact-extractor',
+        operationName: GEN_AI_OPERATION_NAME_VALUE_INVOKE_AGENT,
+        label: 'note-taker',
         attributes: {
-          [ATTR_GEN_AI_OUTPUT_TYPE]: GEN_AI_OUTPUT_TYPE_VALUE_JSON,
+          [ATTR_GEN_AI_AGENT_NAME]: 'note-taker',
           [ATTR_BOT_SESSION_ID]: ctx.sessionId,
         },
       },
       {
-        prompt,
+        prompt: buildNoteTakerPrompt(patientMessage, therapistResponse, ctx),
         options: {
-          systemPrompt,
+          systemPrompt: NOTE_TAKER_SYSTEM_PROMPT,
           model: ANTHROPIC_MODEL_CLAUDE_SONNET,
-          tools: [],
-          maxTurns: 1,
-          maxBudgetUsd: 1,
+          mcpServers: { 'note-taker-tools': mcpTools },
+          allowedTools: [
+            'mcp__note-taker-tools__save_artifact',
+            'Read',
+            'Write',
+          ],
+          tools: ['Read', 'Write'],
+          maxTurns: 5,
+          maxBudgetUsd: 2,
+          cwd: ctx.dataDir,
           persistSession: false,
-          permissionMode: 'acceptEdits',
-          stderr: (data: string) => logger.warn('[artifact-extractor:stderr]', data),
-          outputFormat: {
-            type: 'json_schema',
-            schema: z.toJSONSchema(ArtifactSchema),
-          },
+          permissionMode: 'dontAsk',
+          hooks,
+          stderr: (data: string) => logger.warn('[note-taker:stderr]', data),
         },
       },
     )
-
-    if (!structuredOutput)
-      return
-
-    const parsed = ArtifactSchema.safeParse(structuredOutput)
-    if (!parsed.success)
-      return
-
-    const data = parsed.data
-
-    // Save artifacts to DB
-    for (const artifact of data.artifacts) {
-      await saveArtifact({
-        sessionId: ctx.sessionId,
-        patientId: ctx.patientId,
-        type: artifact.type,
-        content: artifact.content,
-        verbatimQuote: artifact.verbatimQuote,
-        clinicalRelevance: artifact.clinicalRelevance,
-      })
-    }
-
-    // Apply profile updates
-    const updates = data.profileUpdates
-    if (updates.newThemes?.length || updates.newTriggers?.length || updates.progressNote) {
-      const patient = await updatePatientProfile(ctx.telegramId, {})
-
-      if (patient) {
-        const profile: PatientProfile = (patient.profile as PatientProfile) ?? {}
-
-        if (updates.newThemes?.length) {
-          const themes = profile.recurringThemes ?? []
-
-          for (const theme of updates.newThemes) {
-            const existing = themes.find(t => t.theme === theme)
-            if (existing) {
-              existing.frequency++
-            }
-            else {
-              themes.push({ theme, frequency: 1, trend: 'new' })
-            }
-          }
-          profile.recurringThemes = themes
-        }
-
-        if (updates.newTriggers?.length) {
-          const existing = new Set(profile.triggers ?? [])
-          for (const t of updates.newTriggers)
-            existing.add(t)
-          profile.triggers = [...existing]
-        }
-
-        if (updates.progressNote) {
-          profile.progressNotes = [
-            ...(profile.progressNotes ?? []),
-            {
-              date: new Date().toISOString().split('T')[0],
-              note: updates.progressNote,
-            },
-          ]
-        }
-
-        await updatePatientProfile(ctx.telegramId, profile)
-        await writeProfile(ctx.profilePath, ctx.telegramId, profile)
-      }
-    }
-
-    // Generate SOAP note if needed
-    if (data.shouldGenerateSoapNote) {
-      await generateSoapNote(ctx)
-    }
   }
   catch (err) {
-    logger.error('Artifact extraction failed:', err)
-  }
-}
-
-async function generateSoapNote(ctx: SessionContext): Promise<void> {
-  try {
-    const profileContent = await readProfile(ctx.profilePath)
-
-    const prompt = `Generate a SOAP note for this therapy session.
-
-Patient profile:
-${profileContent || 'No profile available'}
-
-Session type: ${ctx.sessionType}
-Session ID: ${ctx.sessionId}
-
-Provide a structured SOAP note based on the therapy session.`
-
-    const systemPrompt = 'You are a clinical documentation assistant. Generate concise, professional SOAP notes for therapy sessions.'
-
-    const { structuredOutput } = await tracedQuery({
-      operationName: GEN_AI_OPERATION_NAME_VALUE_CHAT,
-      label: 'soap-note',
-      attributes: {
-        [ATTR_GEN_AI_OUTPUT_TYPE]: GEN_AI_OUTPUT_TYPE_VALUE_JSON,
-        [ATTR_BOT_SESSION_ID]: ctx.sessionId,
-      },
-    }, {
-      prompt,
-      options: {
-        systemPrompt,
-        model: ANTHROPIC_MODEL_CLAUDE_SONNET,
-        tools: [],
-        maxTurns: 1,
-        maxBudgetUsd: 1,
-        persistSession: false,
-        permissionMode: 'acceptEdits',
-        stderr: (data: string) => logger.warn('[soap-note:stderr]', data),
-        outputFormat: {
-          type: 'json_schema',
-          schema: z.toJSONSchema(soapSchema),
-        },
-      },
-    })
-
-    if (!structuredOutput)
-      return
-
-    const parsed = soapSchema.safeParse(structuredOutput)
-
-    if (!parsed.success)
-      return
-
-    const notePath = join(dirname(ctx.transcriptPath), 'notes.md')
-
-    await writeSoapNote(
-      notePath,
-      ctx.sessionId,
-      new Date().toISOString().split('T')[0],
-      parsed.data,
-    )
-  }
-  catch (err) {
-    logger.error('SOAP note generation failed:', err)
+    logger.error('Note-taker failed:', err)
   }
 }
