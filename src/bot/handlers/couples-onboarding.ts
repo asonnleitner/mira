@@ -179,7 +179,7 @@ async function runCouplesOnboardingAgent(
       options: {
         systemPrompt,
         model: ANTHROPIC_MODEL_CLAUDE_SONNET,
-        cwd: config.DATA_DIR,
+        cwd: join(config.DATA_DIR, 'couples', String(chatId)),
         mcpServers: { 'couples-onboarding-tools': server },
         allowedTools,
         tools: [] as string[],

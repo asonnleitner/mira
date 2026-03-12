@@ -166,7 +166,7 @@ async function runOnboardingAgent(ctx: BotContext, telegramId: number, userMessa
       options: {
         systemPrompt,
         model: ANTHROPIC_MODEL_CLAUDE_SONNET,
-        cwd: config.DATA_DIR,
+        cwd: join(config.DATA_DIR, 'patients', String(telegramId)),
         mcpServers: { 'onboarding-tools': server },
         allowedTools,
         tools: [] as string[],

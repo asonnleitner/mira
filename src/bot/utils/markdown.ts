@@ -1,17 +1,4 @@
-// Characters that must be escaped in MarkdownV2 (outside formatting entities)
-const SPECIAL_CHARS = /[_*[\]()~`>#+\-=|{}.!\\]/g
-
-// sanitizeMarkdownV2 patterns
-const RE_ALREADY_ESCAPED = /\\([_*[\]()~`>#+\-=|{}.!\\])/g
-const RE_CODE_BLOCK = /```([\s\S]*?)```/g
-const RE_INLINE_CODE = /`([^`\n]+)`/g
-const RE_INLINE_LINK = /\[([^\]]*)\]\(([^)]*)\)/g
-const RE_SPOILER = /\|\|([^|]+)\|\|/g
-const RE_UNDERLINE = /__([^_]+)__/g
-const RE_BOLD = /\*([^*]+)\*/g
-const RE_ITALIC = /_([^_]+)_/g
-const RE_STRIKETHROUGH = /~([^~]+)~/g
-const RE_PLACEHOLDER = /\0(\d+)\0/g
+import { convert } from 'telegram-markdown-v2'
 
 // stripMarkdown patterns
 const RE_STRIP_LINK = /\[([^\]]*)\]\(([^)]*)\)/g
@@ -24,69 +11,14 @@ const RE_STRIP_ITALIC = /_([^_]*)_/g
 const RE_STRIP_STRIKETHROUGH = /~([^~]*)~/g
 const RE_UNESCAPE = /\\([_*[\]()~`>#+\-=|{}.!\\])/g
 
-const FORMAT_PATTERNS: [RegExp, string, string][] = [
-  [RE_SPOILER, '||', '||'],
-  [RE_UNDERLINE, '__', '__'],
-  [RE_BOLD, '*', '*'],
-  [RE_ITALIC, '_', '_'],
-  [RE_STRIKETHROUGH, '~', '~'],
-]
-
 /**
- * Sanitize text for Telegram MarkdownV2 parse mode.
+ * Convert standard Markdown to Telegram MarkdownV2 format.
  *
- * Preserves valid formatting (bold, italic, code, links, etc.)
- * while escaping special characters in plain-text regions.
+ * Uses an AST-based parser (remark/unified) to properly handle
+ * nested formatting, special character escaping, and edge cases.
  */
 export function sanitizeMarkdownV2(text: string): string {
-  const placeholders: string[] = []
-
-  function ph(content: string): string {
-    const idx = placeholders.length
-    placeholders.push(content)
-    return `\x00${idx}\x00`
-  }
-
-  function resolve(str: string): string {
-    return str.replace(RE_PLACEHOLDER, (_, i) => placeholders[Number(i)] ?? '')
-  }
-
-  let s = text
-
-  // 1. Protect already-escaped characters (don't double-escape)
-  s = s.replace(RE_ALREADY_ESCAPED, (_, char) => ph(`\\${char}`))
-
-  // 2. Protect code blocks (``` ... ```)
-  s = s.replace(RE_CODE_BLOCK, match => ph(match))
-
-  // 3. Protect inline code (` ... `)
-  s = s.replace(RE_INLINE_CODE, match => ph(match))
-
-  // 4. Protect inline links [text](url)
-  s = s.replace(RE_INLINE_LINK, (_, linkText, url) => {
-    const sanitizedText = sanitizeMarkdownV2(resolve(linkText))
-    return ph(`[${sanitizedText}](${url})`)
-  })
-
-  // 5. Protect formatting pairs in order: ||, __, *, _, ~
-  for (const [pattern, open, close] of FORMAT_PATTERNS) {
-    s = s.replace(pattern, (_, content) => {
-      const sanitizedContent = sanitizeMarkdownV2(resolve(content))
-      return ph(`${open}${sanitizedContent}${close}`)
-    })
-  }
-
-  // 6. Escape remaining special characters
-  s = s.replace(SPECIAL_CHARS, char => `\\${char}`)
-
-  // 7. Restore all placeholders (handle nested placeholders)
-  let prev = ''
-  while (prev !== s) {
-    prev = s
-    s = s.replace(RE_PLACEHOLDER, (_, idx) => placeholders[Number(idx)])
-  }
-
-  return s
+  return convert(text, 'escape').trimEnd()
 }
 
 /**

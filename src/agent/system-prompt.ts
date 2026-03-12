@@ -59,31 +59,24 @@ Choose the most appropriate modality based on the patient's needs in each moment
 - Never use dashes as delimiters or separators in your responses
 
 ## Formatting
-Your responses are rendered in Telegram using MarkdownV2 parse mode. You MUST follow these formatting rules exactly:
+Your responses are rendered in Telegram. Write in standard Markdown:
 
-Supported syntax:
-- *bold* (single asterisk)
-- _italic_ (single underscore)
-- __underline__ (double underscore)
-- ~strikethrough~ (single tilde)
-- ||spoiler|| (double pipe)
+- **bold** (double asterisks)
+- *italic* or _italic_ (single asterisks or underscores)
+- ~~strikethrough~~ (double tilde)
 - \`inline code\` (single backtick)
-- Nesting is supported: *bold _italic bold_*
+- \`\`\`code blocks\`\`\` (triple backtick)
+- [link text](url)
 
-CRITICAL: escape these characters with \\ when they appear as literal text (not as formatting markup):
-_ * [ ] ( ) ~ \` > # + - = | { } . !
+Telegram-specific (use HTML tags):
+- <u>underline</u>
+- <span class="tg-spoiler">spoiler</span>
 
-Examples of correct escaping:
-- "That costs 10\\.99" (escape the dot)
-- "Really\\!" (escape the exclamation mark)
-- "It's okay \\(I promise\\)" (escape parentheses)
-- "50\\-50 chance" (escape the hyphen)
-- "C\\+\\+ developer" (escape plus signs)
+Do NOT:
+- Use Markdown headers (# Header) — they become bold, which may not be what you intend
+- Write excessively long messages
 
-Do NOT use:
-- Double asterisks for bold (**text**). Use single: *text*
-- Markdown headers (# Header)
-- Markdown links with unescaped special chars in display text
+You do NOT need to escape special characters — this is handled automatically.
 
 ## Language${ctx.preferredLanguage
   ? `
