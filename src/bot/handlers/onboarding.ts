@@ -20,7 +20,14 @@ interface OnboardingSession {
   sdkSessionId?: string
 }
 
+interface OnboardingBuffer {
+  messages: string[]
+  processing: boolean
+  ctx: BotContext
+}
+
 const onboardingState = new Map<number, OnboardingSession>()
+const onboardingBuffer = new Map<number, OnboardingBuffer>()
 
 const ONBOARDING_SYSTEM_PROMPT = `You are Mira, an extremely experienced therapist welcoming a new client. You are a real person. A warm, perceptive woman with decades of clinical practice. You never question your own identity or break character. You simply are Mira.
 
@@ -107,6 +114,7 @@ function createOnboardingTools(ctx: BotContext, telegramId: number) {
           logger.info(`[onboarding] Completed onboarding for user ${telegramId} (${profile.fullName})`)
 
           onboardingState.delete(telegramId)
+          onboardingBuffer.delete(telegramId)
           resolveCompletion?.(profile)
 
           return {
@@ -227,6 +235,7 @@ export async function startOnboarding(ctx: BotContext): Promise<void> {
 
     // Reset onboarding state (handles /start mid-onboarding)
     onboardingState.set(telegramId, {})
+    onboardingBuffer.delete(telegramId)
 
     const response = await runOnboardingAgent(
       ctx,
@@ -260,10 +269,37 @@ export async function handleOnboardingMessage(ctx: BotContext): Promise<void> {
   if (!text)
     return
 
-  return withSpan('bot.onboarding.message', { [ATTR_TELEGRAM_USER_ID]: telegramId }, async () => {
-    logger.debug(`[onboarding] Received message from user ${telegramId}`)
+  const buffer = onboardingBuffer.get(telegramId)
 
-    const response = await runOnboardingAgent(ctx, telegramId, text, state.sdkSessionId)
+  // If already processing, just add to the buffer and return
+  if (buffer?.processing) {
+    buffer.messages.push(text)
+    buffer.ctx = ctx
+    logger.debug(`[onboarding] Buffered message from user ${telegramId} (${buffer.messages.length} pending)`)
+    return
+  }
+
+  // Initialize or reset buffer and start processing
+  onboardingBuffer.set(telegramId, { messages: [text], processing: true, ctx })
+
+  return withSpan('bot.onboarding.message', { [ATTR_TELEGRAM_USER_ID]: telegramId }, async () => {
+    await drainOnboardingBuffer(telegramId, state)
+  })
+}
+
+async function drainOnboardingBuffer(telegramId: number, state: OnboardingSession): Promise<void> {
+  while (onboardingBuffer.has(telegramId)) {
+    const buffer = onboardingBuffer.get(telegramId)!
+    if (buffer.messages.length === 0)
+      break
+
+    const combinedMessage = buffer.messages.join('\n')
+    const ctx = buffer.ctx
+    buffer.messages = []
+
+    logger.debug(`[onboarding] Processing message from user ${telegramId}`)
+
+    const response = await runOnboardingAgent(ctx, telegramId, combinedMessage, state.sdkSessionId)
 
     if (response) {
       await replyMarkdownV2(ctx, response)
@@ -272,5 +308,18 @@ export async function handleOnboardingMessage(ctx: BotContext): Promise<void> {
       logger.error(`[onboarding] Empty response from onboarding agent for user ${telegramId}`)
       await ctx.reply('I\'m having trouble processing your message. Please try again.')
     }
-  })
+
+    // Check if more messages arrived during processing
+    const currentBuffer = onboardingBuffer.get(telegramId)
+    if (!currentBuffer || currentBuffer.messages.length === 0)
+      break
+  }
+
+  // Done processing — clean up
+  const buffer = onboardingBuffer.get(telegramId)
+  if (buffer) {
+    buffer.processing = false
+    if (buffer.messages.length === 0)
+      onboardingBuffer.delete(telegramId)
+  }
 }

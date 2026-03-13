@@ -24,7 +24,14 @@ interface CouplesOnboardingSession {
   deadlineTimer?: ReturnType<typeof setTimeout>
 }
 
+interface CouplesOnboardingBuffer {
+  messages: string[] // already formatted as "[SenderName]: text"
+  processing: boolean
+  ctx: BotContext
+}
+
 const couplesOnboardingState = new Map<number, CouplesOnboardingSession>()
+const couplesOnboardingBuffer = new Map<number, CouplesOnboardingBuffer>()
 
 const REMINDER_DELAY_MS = 5 * 60 * 1000 // 5 minutes
 const DEADLINE_DELAY_MS = 10 * 60 * 1000 // 10 minutes
@@ -112,6 +119,7 @@ function createCouplesOnboardingTools(chatId: number) {
           }
 
           couplesOnboardingState.delete(chatId)
+          couplesOnboardingBuffer.delete(chatId)
           resolveCompletion?.()
 
           return {
@@ -276,22 +284,22 @@ function setupTimers(ctx: BotContext, chatId: number): void {
       .map(([, name]) => name)
 
     const missingName = missingPartners.length > 0 ? missingPartners[0] : allNames[1] ?? 'a partner'
+    const systemMessage = `[System]: ${missingName} has not responded. Proceed with available information.`
 
     try {
-      const response = await runCouplesOnboardingAgent(
-        ctx,
-        chatId,
-        `[System]: ${missingName} has not responded. Proceed with available information.`,
-        currentState.sdkSessionId,
-      )
+      const buffer = couplesOnboardingBuffer.get(chatId)
 
-      if (response) {
-        await sendMarkdownV2({ chatId, text: response, api: ctx.api })
-        // Set up timers again in case agent needs another round
-        if (couplesOnboardingState.has(chatId)) {
-          setupTimers(ctx, chatId)
-        }
+      // If already processing a user message, just push the system message into the buffer
+      if (buffer?.processing) {
+        buffer.messages.push(systemMessage)
+        buffer.ctx = ctx
+        logger.debug(`[couples-onboarding] Deadline message buffered for chat ${chatId}`)
+        return
       }
+
+      // Start the drain loop for the system message
+      couplesOnboardingBuffer.set(chatId, { messages: [systemMessage], processing: true, ctx })
+      await drainCouplesOnboardingBuffer(chatId, currentState)
     }
     catch (err) {
       logger.error('[couples-onboarding] Failed to process deadline:', err)
@@ -322,6 +330,7 @@ export async function startCouplesOnboarding(ctx: BotContext): Promise<void> {
     }
 
     couplesOnboardingState.set(chatId, state)
+    couplesOnboardingBuffer.delete(chatId)
 
     const response = await runCouplesOnboardingAgent(
       ctx,
@@ -353,23 +362,51 @@ export async function handleCouplesOnboardingMessage(ctx: BotContext): Promise<v
   if (!text)
     return
 
+  // Register partner eagerly (before buffer check) so new partners are tracked immediately
+  if (!state.partnerNames.has(telegramId)) {
+    const patient = await findPatientByTelegramId(telegramId)
+    const name = patient?.firstName ?? ctx.from!.first_name ?? 'Partner'
+    state.partnerNames.set(telegramId, name)
+  }
+
+  state.partnerIds.add(telegramId)
+
+  // Reset timers on any incoming message
+  clearTimers(state)
+  state.reminderSent = false
+
+  const senderName = state.partnerNames.get(telegramId) ?? 'Partner'
+  const formattedMessage = `[${senderName}]: ${text}`
+
+  const buffer = couplesOnboardingBuffer.get(chatId)
+
+  // If already processing, just add to the buffer and return
+  if (buffer?.processing) {
+    buffer.messages.push(formattedMessage)
+    buffer.ctx = ctx
+    logger.debug(`[couples-onboarding] Buffered message from ${senderName} in chat ${chatId} (${buffer.messages.length} pending)`)
+    return
+  }
+
+  // Initialize buffer and start processing
+  couplesOnboardingBuffer.set(chatId, { messages: [formattedMessage], processing: true, ctx })
+
   return withSpan('bot.couples-onboarding.message', { [ATTR_TELEGRAM_CHAT_ID]: chatId }, async () => {
-    // Add this partner if new
-    if (!state.partnerNames.has(telegramId)) {
-      const patient = await findPatientByTelegramId(telegramId)
-      const name = patient?.firstName ?? ctx.from!.first_name ?? 'Partner'
-      state.partnerNames.set(telegramId, name)
-    }
+    await drainCouplesOnboardingBuffer(chatId, state)
+  })
+}
 
-    state.partnerIds.add(telegramId)
+async function drainCouplesOnboardingBuffer(chatId: number, state: CouplesOnboardingSession): Promise<void> {
+  while (couplesOnboardingBuffer.has(chatId)) {
+    const buffer = couplesOnboardingBuffer.get(chatId)!
+    if (buffer.messages.length === 0)
+      break
 
-    // Reset timers on any incoming message
-    clearTimers(state)
-    state.reminderSent = false
+    const combinedMessage = buffer.messages.join('\n')
+    const ctx = buffer.ctx
+    buffer.messages = []
 
-    const senderName = state.partnerNames.get(telegramId) ?? 'Partner'
-
-    logger.debug(`[couples-onboarding] Received message from ${senderName} in chat ${chatId}`)
+    logger.debug(`[couples-onboarding] Processing messages for chat ${chatId}`)
 
     // Show typing indicator
     ctx.api.sendChatAction(chatId, 'typing').catch(() => {})
@@ -377,7 +414,7 @@ export async function handleCouplesOnboardingMessage(ctx: BotContext): Promise<v
     const response = await runCouplesOnboardingAgent(
       ctx,
       chatId,
-      `[${senderName}]: ${text}`,
+      combinedMessage,
       state.sdkSessionId,
     )
 
@@ -392,5 +429,18 @@ export async function handleCouplesOnboardingMessage(ctx: BotContext): Promise<v
       logger.error(`[couples-onboarding] Empty response from onboarding agent for chat ${chatId}`)
       await ctx.reply('I\'m having trouble processing your message. Please try again.')
     }
-  })
+
+    // Check if more messages arrived during processing
+    const currentBuffer = couplesOnboardingBuffer.get(chatId)
+    if (!currentBuffer || currentBuffer.messages.length === 0)
+      break
+  }
+
+  // Done processing — clean up
+  const buffer = couplesOnboardingBuffer.get(chatId)
+  if (buffer) {
+    buffer.processing = false
+    if (buffer.messages.length === 0)
+      couplesOnboardingBuffer.delete(chatId)
+  }
 }
