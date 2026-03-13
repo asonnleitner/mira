@@ -21,6 +21,7 @@ services:
     volumes:
       - ./data/app/data:/app/data
       - ./data/app/db:/app/db
+      - ./data/home/bun/.claude:/home/bun/.claude
     depends_on:
       init-permissions:
         condition: service_completed_successfully
