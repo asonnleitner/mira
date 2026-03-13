@@ -57,7 +57,7 @@ Important guidelines:
   - If UNAMBIGUOUS (e.g. "25/12/1990", since 25 can't be a month), parse confidently without confirmation.
   - If user gives just an age, estimate DOB (current year minus age, January 1st).
   - When calling complete_onboarding, always convert to YYYY-MM-DD format.
-- Never use dashes as delimiters or separators in your responses. Dashes are only acceptable in list items.
+- NEVER use em dashes (—), en dashes (–), or hyphens (-) as separators, delimiters, or parenthetical markers in your responses. Do not use dashes to set off clauses. Use commas, periods, or restructure sentences instead. Hyphens are only acceptable inside compound words (e.g. "well-being") and list item markers.
 - Start by greeting them warmly and asking for their name.
 
 ${FORMATTING_INSTRUCTIONS}`

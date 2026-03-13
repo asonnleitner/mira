@@ -3,7 +3,7 @@ import type { SessionContext } from '~/agent/context-assembler'
 import type { ToolContext } from '~/agent/tools'
 import { ATTR_GEN_AI_AGENT_NAME, ATTR_GEN_AI_CONVERSATION_ID, GEN_AI_OPERATION_NAME_VALUE_INVOKE_AGENT } from '@opentelemetry/semantic-conventions/incubating'
 import { assembleSystemPrompt } from '~/agent/context-assembler'
-import { auditToolUse, createFileSecurityHook } from '~/agent/hooks'
+import { auditToolUse, createFileSecurityHook, createPreCompactHook } from '~/agent/hooks'
 import { createMcpTracingHooks } from '~/agent/mcp-tracing'
 import { tracedQuery } from '~/agent/query'
 import { createTherapyTools } from '~/agent/tools'
@@ -27,6 +27,9 @@ function createTherapistHooks(dataDir: string, sessionCtx: SessionContext) {
     ],
     PostToolUseFailure: [
       { matcher: '^mcp__', hooks: [mcpTracing.postToolUseFailure] },
+    ],
+    PreCompact: [
+      { hooks: [createPreCompactHook(sessionCtx.sessionId, sessionCtx.telegramId)] },
     ],
   }
 }

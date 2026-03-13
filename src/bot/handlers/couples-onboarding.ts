@@ -59,7 +59,7 @@ Important guidelines:
 - If you receive a [System] message saying a partner has not responded, proceed with the information you have.
 - When you have gathered enough information (or been told to proceed with partial data), call the complete_couples_onboarding tool.
 - Start by greeting both partners warmly and asking about their relationship.
-- Never use dashes as delimiters or separators in your responses. Dashes are only acceptable in list items.
+- NEVER use em dashes (—), en dashes (–), or hyphens (-) as separators, delimiters, or parenthetical markers in your responses. Do not use dashes to set off clauses. Use commas, periods, or restructure sentences instead. Hyphens are only acceptable inside compound words (e.g. "well-being") and list item markers.
 
 ${FORMATTING_INSTRUCTIONS}`
 

@@ -1,4 +1,4 @@
-import type { HookCallback, PostToolUseHookInput, PreToolUseHookInput } from '@anthropic-ai/claude-agent-sdk'
+import type { HookCallback, PostToolUseHookInput, PreCompactHookInput, PreToolUseHookInput } from '@anthropic-ai/claude-agent-sdk'
 import { resolve } from 'node:path'
 import { logger } from '~/telemetry/logger'
 
@@ -19,6 +19,14 @@ export function createFileSecurityHook(allowedBase: string, dataDir: string): Ho
         },
       }
     }
+    return {}
+  }
+}
+
+export function createPreCompactHook(sessionId: number, telegramId: number): HookCallback {
+  return async (input) => {
+    const preCompact = input as PreCompactHookInput
+    logger.info(`[compact] Session ${sessionId} compacting (trigger=${preCompact.trigger}, user=${telegramId})`)
     return {}
   }
 }
