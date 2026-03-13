@@ -1,12 +1,13 @@
 import { sql } from 'drizzle-orm'
 import { index, integer, sqliteTable, text, uniqueIndex } from 'drizzle-orm/sqlite-core'
+import { chats } from './chats'
 
 export const sessionTypeValues = ['individual', 'couples'] as const
 export type SessionType = (typeof sessionTypeValues)[number]
 
 export const therapySessions = sqliteTable('therapy_sessions', {
   id: integer().primaryKey({ autoIncrement: true }),
-  chatId: integer('chat_id').notNull(),
+  chatId: integer('chat_id').notNull().references(() => chats.id),
   sdkSessionId: text('sdk_session_id', { length: 256 }),
   type: text({ enum: sessionTypeValues }).notNull(),
   startedAt: integer('started_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),

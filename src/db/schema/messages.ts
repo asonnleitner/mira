@@ -9,6 +9,7 @@ export const sessionMessages = sqliteTable('session_messages', {
   patientId: integer('patient_id').references(() => patients.id),
   role: text('role', { length: 20, enum: ['patient', 'therapist', 'system'] }).notNull(), // "patient" | "therapist" | "system"
   content: text().notNull(),
+  senderTelegramId: integer('sender_telegram_id'),
   timestamp: integer('created_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
 }, table => [
   index('messages_session_id_timestamp_idx').on(table.sessionId, table.timestamp),

@@ -10,6 +10,7 @@ import { detectChatMode } from '~/bot/router'
 import { sendMarkdownV2 } from '~/bot/utils/telegram-send'
 import { config } from '~/config'
 import { ATTR_BOT_CHAT_MODE, ATTR_BOT_MESSAGE_COUNT, ATTR_TELEGRAM_CHAT_ID } from '~/constants'
+import { addChatMember, findOrCreateChat } from '~/db/queries/chats'
 import { resetUnansweredCount } from '~/db/queries/check-in'
 import { createPatient, findPatientByTelegramId } from '~/db/queries/patients'
 import { createSession, findActiveSession, saveMessage, updateSessionLastMessage, updateSessionSdkId } from '~/db/queries/sessions'
@@ -22,6 +23,7 @@ interface MessageEntry {
   text: string
   from: string
   patientId?: number
+  senderTelegramId: number
 }
 
 interface ChatBuffer {
@@ -100,27 +102,34 @@ export async function handleMessage(ctx: BotContext): Promise<void> {
     }
   }
 
-  // Reset unanswered check-in count on any user message
-  resetUnansweredCount(chatId).catch(() => {})
+  // Resolve internal chat entity
+  const chat = await findOrCreateChat(chatId, chatMode)
+
+  // Ensure chat membership
+  await addChatMember(chat.id, patient.id)
+
+  // Reset unanswered check-in count on any user message (using internal chatId)
+  resetUnansweredCount(chat.id).catch(() => {})
 
   const messageEntry: MessageEntry = {
     text,
     from: ctx.from!.first_name || (chatMode === 'couples' ? 'Partner' : 'Patient'),
     patientId: patient.id,
+    senderTelegramId: telegramId,
   }
 
   const spanContext = captureSpanContext()
 
-  bufferMessage(ctx, chatId, chatMode, messageEntry, spanContext)
+  bufferMessage(ctx, chatId, chat.id, chatMode, messageEntry, spanContext)
 }
 
-function bufferMessage(ctx: BotContext, chatId: number, chatMode: SessionType, message: MessageEntry, spanContext?: SpanContext): void {
-  const existing = chatBuffer.get(chatId)
+function bufferMessage(ctx: BotContext, telegramChatId: number, internalChatId: number, chatMode: SessionType, message: MessageEntry, spanContext?: SpanContext): void {
+  const existing = chatBuffer.get(telegramChatId)
 
   if (existing) {
     // Abort in-flight request if one is running
     if (existing.abortController) {
-      logger.debug(`[message] Aborting in-flight request for chat ${chatId}, buffering new message`)
+      logger.debug(`[message] Aborting in-flight request for chat ${telegramChatId}, buffering new message`)
       existing.abortController.abort()
       existing.abortController = undefined
     }
@@ -133,7 +142,7 @@ function bufferMessage(ctx: BotContext, chatId: number, chatMode: SessionType, m
     existing.ctx = ctx // Use latest ctx for reply
   }
   else {
-    chatBuffer.set(chatId, {
+    chatBuffer.set(telegramChatId, {
       messages: [message],
       spanContexts: spanContext ? [spanContext] : [],
       ctx,
@@ -141,10 +150,10 @@ function bufferMessage(ctx: BotContext, chatId: number, chatMode: SessionType, m
     })
   }
 
-  const buffer = chatBuffer.get(chatId)!
+  const buffer = chatBuffer.get(telegramChatId)!
 
   // Show typing indicator
-  ctx.api.sendChatAction(chatId, 'typing').catch(() => {})
+  ctx.api.sendChatAction(telegramChatId, 'typing').catch(() => {})
 
   // Process immediately
   const ac = new AbortController()
@@ -160,45 +169,46 @@ function bufferMessage(ctx: BotContext, chatId: number, chatMode: SessionType, m
   void (async () => {
     try {
       await withLinkedSpan('bot.processTherapyMessage', {
-        [ATTR_TELEGRAM_CHAT_ID]: chatId,
+        [ATTR_TELEGRAM_CHAT_ID]: telegramChatId,
         [ATTR_BOT_CHAT_MODE]: chatMode,
         [ATTR_BOT_MESSAGE_COUNT]: messages.length,
       }, links, async () => {
-        await processTherapyMessage(buffer.ctx, chatId, chatMode, messages, ac.signal)
+        await processTherapyMessage(buffer.ctx, telegramChatId, internalChatId, chatMode, messages, ac.signal)
       })
 
-      chatBuffer.delete(chatId)
+      chatBuffer.delete(telegramChatId)
     }
     catch (err) {
       if (ac.signal.aborted)
         return
 
-      logger.error(`[message] Error processing therapy message for chat ${chatId}:`, err)
+      logger.error(`[message] Error processing therapy message for chat ${telegramChatId}:`, err)
       // Notify user that something went wrong
-      ctx.api.sendMessage(chatId, 'Sorry, something went wrong. Please try again.').catch(() => {})
+      ctx.api.sendMessage(telegramChatId, 'Sorry, something went wrong. Please try again.').catch(() => {})
 
-      chatBuffer.delete(chatId)
+      chatBuffer.delete(telegramChatId)
     }
   })()
 }
 
 async function processTherapyMessage(
   ctx: BotContext,
-  chatId: number,
+  telegramChatId: number,
+  internalChatId: number,
   chatMode: SessionType,
   messages: MessageEntry[],
   signal: AbortSignal,
 ): Promise<void> {
   // Show typing indicator
   const typingInterval = setInterval(() => {
-    ctx.api.sendChatAction(chatId, 'typing').catch(() => {})
+    ctx.api.sendChatAction(telegramChatId, 'typing').catch(() => {})
   }, 4000)
 
-  ctx.api.sendChatAction(chatId, 'typing').catch(() => {})
+  ctx.api.sendChatAction(telegramChatId, 'typing').catch(() => {})
 
   try {
-    // Resolve or create active session
-    let session = await findActiveSession(chatId)
+    // Resolve or create active session (using internal chatId)
+    let session = await findActiveSession(internalChatId)
 
     const primaryPatientId = messages[0].patientId ?? ctx.session.patientId!
     const telegramId = ctx.from!.id
@@ -208,12 +218,12 @@ async function processTherapyMessage(
 
       const transcriptPath = sessionTranscriptPath(
         chatMode,
-        chatMode === 'individual' ? telegramId : chatId,
+        chatMode === 'individual' ? telegramId : telegramChatId,
         sessionCount,
       )
 
       session = await createSession({
-        chatId,
+        chatId: internalChatId,
         type: chatMode,
         transcriptPath,
       })
@@ -231,7 +241,7 @@ async function processTherapyMessage(
 
     ctx.session.activeSessionId = session.id
 
-    logger.debug(`[message] Session resolved: chatId=${chatId} sessionId=${session.id} isNew=${!session.sdkSessionId}`)
+    logger.debug(`[message] Session resolved: chatId=${internalChatId} sessionId=${session.id} isNew=${!session.sdkSessionId}`)
 
     // Compose patient message (batch for couples)
     let combinedMessage: string
@@ -260,6 +270,7 @@ async function processTherapyMessage(
         patientId: msg.patientId,
         role: 'patient',
         content: msg.text,
+        senderTelegramId: msg.senderTelegramId,
       })
     }
 
@@ -267,12 +278,12 @@ async function processTherapyMessage(
     if (signal.aborted)
       throw new DOMException('Aborted', 'AbortError')
 
-    logger.debug(`[message] Calling Claude: chatId=${chatId} sessionId=${session.id} mode=${chatMode} resume=${!!session.sdkSessionId}`)
+    logger.debug(`[message] Calling Claude: chatId=${internalChatId} sessionId=${session.id} mode=${chatMode} resume=${!!session.sdkSessionId}`)
 
     // Build session context
     const profilePath = chatMode === 'individual'
       ? patientProfilePath(telegramId)
-      : relationshipProfilePath(chatId)
+      : relationshipProfilePath(telegramChatId)
 
     // Resolve preferred language from patient record
     const patient = await findPatientByTelegramId(telegramId)
@@ -280,7 +291,8 @@ async function processTherapyMessage(
     const sessionCtx: SessionContext = {
       sessionId: session.id,
       sessionType: chatMode,
-      chatId,
+      chatId: internalChatId,
+      telegramChatId,
       patientId: primaryPatientId,
       telegramId,
       preferredLanguage: patient?.preferredLanguage ?? undefined,
@@ -332,12 +344,12 @@ async function processTherapyMessage(
 
     // Warn if agent returned an empty response
     if (!response)
-      logger.warn(`[message] Empty response from agent for chat ${chatId}`)
+      logger.warn(`[message] Empty response from agent for chat ${telegramChatId}`)
 
-    // Send response to Telegram
-    logger.info(`[message] Sending response to chat ${chatId} (${response.length} chars)`)
+    // Send response to Telegram (uses raw Telegram chat ID)
+    logger.info(`[message] Sending response to chat ${telegramChatId} (${response.length} chars)`)
 
-    await sendMarkdownV2({ chatId, text: response, api: ctx.api })
+    await sendMarkdownV2({ chatId: telegramChatId, text: response, api: ctx.api })
 
     // Append therapist response to transcript and DB
     await appendMessage(

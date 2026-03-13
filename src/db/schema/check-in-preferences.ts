@@ -1,9 +1,10 @@
 import { sql } from 'drizzle-orm'
 import { integer, sqliteTable, uniqueIndex } from 'drizzle-orm/sqlite-core'
+import { chats } from './chats'
 
 export const checkInPreferences = sqliteTable('check_in_preferences', {
   id: integer().primaryKey({ autoIncrement: true }),
-  chatId: integer('chat_id').notNull(),
+  chatId: integer('chat_id').notNull().references(() => chats.id),
   enabled: integer({ mode: 'boolean' }).default(true).notNull(),
   intervalDays: integer('interval_days').default(3).notNull(),
   lastCheckInAt: integer('last_check_in_at', { mode: 'timestamp' }),

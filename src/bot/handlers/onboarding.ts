@@ -9,7 +9,8 @@ import { FORMATTING_INSTRUCTIONS } from '~/agent/system-prompt'
 import { isStaleSessionError } from '~/agent/therapist'
 import { replyMarkdownV2 } from '~/bot/utils/telegram-send'
 import { ANTHROPIC_MODEL_CLAUDE_SONNET, ATTR_TELEGRAM_USER_ID } from '~/constants'
-import { completeOnboarding, createPatient, findPatientByTelegramId } from '~/db/queries/patients'
+import { completeOnboarding as completeOnboardingRecord, createOnboarding, findOnboarding, updateOnboardingSdkSessionId } from '~/db/queries/onboardings'
+import { completeOnboarding as completePatientOnboarding, createPatient, findPatientByTelegramId } from '~/db/queries/patients'
 import { PatientProfileSchema } from '~/db/schema/patients'
 import { patientDir, patientProfilePath } from '~/paths'
 import { writeProfile } from '~/storage/profile'
@@ -17,6 +18,7 @@ import { logger } from '~/telemetry/logger'
 import { withSpan } from '~/telemetry/tracing'
 
 interface OnboardingSession {
+  onboardingId: number
   sdkSessionId?: string
 }
 
@@ -26,6 +28,7 @@ interface OnboardingBuffer {
   ctx: BotContext
 }
 
+// In-memory cache for hot path — populated from DB on startOnboarding
 const onboardingState = new Map<number, OnboardingSession>()
 const onboardingBuffer = new Map<number, OnboardingBuffer>()
 
@@ -59,7 +62,7 @@ Important guidelines:
 
 ${FORMATTING_INSTRUCTIONS}`
 
-function createOnboardingTools(ctx: BotContext, telegramId: number) {
+function createOnboardingTools(ctx: BotContext, telegramId: number, onboardingId: number) {
   let resolveCompletion: ((profile: PatientProfile) => void) | null = null
 
   const completionPromise = new Promise<PatientProfile>((resolve) => {
@@ -96,11 +99,14 @@ function createOnboardingTools(ctx: BotContext, telegramId: number) {
           })
 
           // Persist to DB — source of truth
-          const patient = await completeOnboarding(telegramId, profile)
+          const patient = await completePatientOnboarding(telegramId, profile)
 
           if (patient) {
             ctx.session.patientId = patient.id
           }
+
+          // Mark onboarding record as complete
+          await completeOnboardingRecord(onboardingId)
 
           // Write PROFILE.md — best-effort, note-taker regenerates if missing
           try {
@@ -132,8 +138,8 @@ function createOnboardingTools(ctx: BotContext, telegramId: number) {
   return { server, completionPromise }
 }
 
-async function runOnboardingAgent(ctx: BotContext, telegramId: number, userMessage: string, sdkSessionId?: string): Promise<string> {
-  const { server } = createOnboardingTools(ctx, telegramId)
+async function runOnboardingAgent(ctx: BotContext, telegramId: number, onboardingId: number, userMessage: string, sdkSessionId?: string): Promise<string> {
+  const { server } = createOnboardingTools(ctx, telegramId, onboardingId)
   const languageCode = ctx.from?.language_code
 
   const languageHint = languageCode
@@ -202,11 +208,12 @@ async function runOnboardingAgent(ctx: BotContext, telegramId: number, userMessa
 
   logger.debug(`[onboarding] Agent completed: telegramId=${telegramId} responseLength=${result.response.length}`)
 
-  // Update stored SDK session ID
+  // Persist SDK session ID to DB
   const state = onboardingState.get(telegramId)
 
   if (state) {
     state.sdkSessionId = result.sessionId
+    await updateOnboardingSdkSessionId(state.onboardingId, result.sessionId)
   }
 
   return result.response
@@ -233,17 +240,41 @@ export async function startOnboarding(ctx: BotContext): Promise<void> {
 
     ctx.session.patientId = patient.id
 
-    // Reset onboarding state (handles restart mid-onboarding)
-    const state: OnboardingSession = {}
+    // Check for existing in-progress onboarding in DB (survives restart)
+    let onboarding = await findOnboarding('individual', { patientId: patient.id })
+    let resumeSessionId: string | undefined
+
+    if (onboarding?.sdkSessionId) {
+      // Resume from persisted SDK session
+      resumeSessionId = onboarding.sdkSessionId
+      logger.info(`[onboarding] Found existing onboarding ${onboarding.id} with SDK session, resuming`)
+    }
+    else if (!onboarding) {
+      // Create new onboarding record
+      onboarding = await createOnboarding('individual', { patientId: patient.id })
+      logger.info(`[onboarding] Created new onboarding record ${onboarding.id}`)
+    }
+
+    // Set in-memory state
+    const state: OnboardingSession = {
+      onboardingId: onboarding.id,
+      sdkSessionId: resumeSessionId,
+    }
     onboardingState.set(telegramId, state)
     // Acquire buffer lock before initial agent call to prevent concurrent calls
     onboardingBuffer.set(telegramId, { messages: [], processing: true, ctx })
 
     try {
+      const initialMessage = resumeSessionId
+        ? 'The user has reconnected. Continue the onboarding conversation from where you left off.'
+        : 'The user just started the bot. Greet them and begin onboarding.'
+
       const response = await runOnboardingAgent(
         ctx,
         telegramId,
-        'The user just started the bot. Greet them and begin onboarding.',
+        onboarding.id,
+        initialMessage,
+        resumeSessionId,
       )
 
       if (response) {
@@ -315,7 +346,7 @@ async function drainOnboardingBuffer(telegramId: number, state: OnboardingSessio
 
     logger.debug(`[onboarding] Processing message from user ${telegramId}`)
 
-    const response = await runOnboardingAgent(ctx, telegramId, combinedMessage, state.sdkSessionId)
+    const response = await runOnboardingAgent(ctx, telegramId, state.onboardingId, combinedMessage, state.sdkSessionId)
 
     if (response) {
       await replyMarkdownV2(ctx, response)

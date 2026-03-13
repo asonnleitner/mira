@@ -61,7 +61,7 @@ export async function updateSessionLastMessage(sessionId: number) {
   )
 }
 
-export async function saveMessage(data: Pick<InsertMessage, 'sessionId' | 'patientId' | 'role' | 'content'>) {
+export async function saveMessage(data: Pick<InsertMessage, 'sessionId' | 'patientId' | 'role' | 'content' | 'senderTelegramId'>) {
   const [msg] = await withDbSpan(
     db.insert(tables.sessionMessages).values(data).returning(),
   )

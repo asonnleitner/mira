@@ -79,7 +79,7 @@ function createNoteTakerTools(ctx: SessionContext) {
 }
 
 function createNoteTakerHooks(dataDir: string, ctx: SessionContext) {
-  const allowedBase = sessionDataDir(ctx.sessionType, ctx.telegramId, ctx.chatId)
+  const allowedBase = sessionDataDir(ctx.sessionType, ctx.telegramId, ctx.telegramChatId)
 
   const mcpTracing = createMcpTracingHooks()
 
@@ -105,7 +105,7 @@ function buildNoteTakerPrompt(
 ): string {
   const profilePath = ctx.sessionType === 'individual'
     ? `patients/${ctx.telegramId}/PROFILE.md`
-    : `couples/${ctx.chatId}/RELATIONSHIP.md`
+    : `couples/${ctx.telegramChatId}/RELATIONSHIP.md`
 
   return `Review this therapy exchange and update clinical documentation as needed.
 

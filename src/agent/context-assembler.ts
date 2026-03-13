@@ -10,7 +10,8 @@ import { withSpan } from '~/telemetry/tracing'
 export interface SessionContext {
   sessionId: number
   sessionType: SessionType
-  chatId: number
+  chatId: number // internal FK (chats.id)
+  telegramChatId: number // raw Telegram chat ID (for file paths and Telegram API)
   patientId: number
   telegramId: number
   preferredLanguage?: string

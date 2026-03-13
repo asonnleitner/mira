@@ -12,7 +12,7 @@ import { sessionDataDir } from '~/paths'
 import { logger } from '~/telemetry/logger'
 
 function createTherapistHooks(dataDir: string, sessionCtx: SessionContext) {
-  const allowedBase = sessionDataDir(sessionCtx.sessionType, sessionCtx.telegramId, sessionCtx.chatId)
+  const allowedBase = sessionDataDir(sessionCtx.sessionType, sessionCtx.telegramId, sessionCtx.telegramChatId)
 
   const mcpTracing = createMcpTracingHooks()
 

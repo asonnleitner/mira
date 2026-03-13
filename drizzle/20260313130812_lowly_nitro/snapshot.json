@@ -1,17 +1,33 @@
 {
   "version": "7",
   "dialect": "sqlite",
-  "id": "d73810e6-c24d-41f2-b030-88e7a4a2060c",
+  "id": "69a81cf8-1f74-4129-a141-ea3114ad63df",
   "prevIds": [
     "00000000-0000-0000-0000-000000000000"
   ],
   "ddl": [
+    {
+      "name": "chat_members",
+      "entityType": "tables"
+    },
+    {
+      "name": "chats",
+      "entityType": "tables"
+    },
+    {
+      "name": "check_in_preferences",
+      "entityType": "tables"
+    },
     {
       "name": "clinical_artifacts",
       "entityType": "tables"
     },
     {
       "name": "grammy_sessions",
+      "entityType": "tables"
+    },
+    {
+      "name": "onboardings",
       "entityType": "tables"
     },
     {
@@ -25,6 +41,186 @@
     {
       "name": "therapy_sessions",
       "entityType": "tables"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": true,
+      "default": null,
+      "generated": null,
+      "name": "id",
+      "entityType": "columns",
+      "table": "chat_members"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "chat_id",
+      "entityType": "columns",
+      "table": "chat_members"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "patient_id",
+      "entityType": "columns",
+      "table": "chat_members"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "(unixepoch())",
+      "generated": null,
+      "name": "joined_at",
+      "entityType": "columns",
+      "table": "chat_members"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": true,
+      "default": null,
+      "generated": null,
+      "name": "id",
+      "entityType": "columns",
+      "table": "chats"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "telegram_chat_id",
+      "entityType": "columns",
+      "table": "chats"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "type",
+      "entityType": "columns",
+      "table": "chats"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "(unixepoch())",
+      "generated": null,
+      "name": "created_at",
+      "entityType": "columns",
+      "table": "chats"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "(unixepoch())",
+      "generated": null,
+      "name": "updated_at",
+      "entityType": "columns",
+      "table": "chats"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": true,
+      "default": null,
+      "generated": null,
+      "name": "id",
+      "entityType": "columns",
+      "table": "check_in_preferences"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "chat_id",
+      "entityType": "columns",
+      "table": "check_in_preferences"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "true",
+      "generated": null,
+      "name": "enabled",
+      "entityType": "columns",
+      "table": "check_in_preferences"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "3",
+      "generated": null,
+      "name": "interval_days",
+      "entityType": "columns",
+      "table": "check_in_preferences"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "last_check_in_at",
+      "entityType": "columns",
+      "table": "check_in_preferences"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "0",
+      "generated": null,
+      "name": "unanswered_count",
+      "entityType": "columns",
+      "table": "check_in_preferences"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "last_modified_by",
+      "entityType": "columns",
+      "table": "check_in_preferences"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "(unixepoch())",
+      "generated": null,
+      "name": "created_at",
+      "entityType": "columns",
+      "table": "check_in_preferences"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "(unixepoch())",
+      "generated": null,
+      "name": "updated_at",
+      "entityType": "columns",
+      "table": "check_in_preferences"
     },
     {
       "type": "integer",
@@ -125,6 +321,86 @@
       "name": "value",
       "entityType": "columns",
       "table": "grammy_sessions"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": true,
+      "default": null,
+      "generated": null,
+      "name": "id",
+      "entityType": "columns",
+      "table": "onboardings"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "chat_id",
+      "entityType": "columns",
+      "table": "onboardings"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "patient_id",
+      "entityType": "columns",
+      "table": "onboardings"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "type",
+      "entityType": "columns",
+      "table": "onboardings"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "'in_progress'",
+      "generated": null,
+      "name": "status",
+      "entityType": "columns",
+      "table": "onboardings"
+    },
+    {
+      "type": "text(256)",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "sdk_session_id",
+      "entityType": "columns",
+      "table": "onboardings"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "(unixepoch())",
+      "generated": null,
+      "name": "created_at",
+      "entityType": "columns",
+      "table": "onboardings"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "(unixepoch())",
+      "generated": null,
+      "name": "updated_at",
+      "entityType": "columns",
+      "table": "onboardings"
     },
     {
       "type": "integer",
@@ -278,6 +554,16 @@
     },
     {
       "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "sender_telegram_id",
+      "entityType": "columns",
+      "table": "session_messages"
+    },
+    {
+      "type": "integer",
       "notNull": true,
       "autoincrement": false,
       "default": "(unixepoch())",
@@ -323,16 +609,6 @@
       "default": null,
       "generated": null,
       "name": "type",
-      "entityType": "columns",
-      "table": "therapy_sessions"
-    },
-    {
-      "type": "text",
-      "notNull": true,
-      "autoincrement": false,
-      "default": "'active'",
-      "generated": null,
-      "name": "status",
       "entityType": "columns",
       "table": "therapy_sessions"
     },
@@ -388,6 +664,51 @@
     },
     {
       "columns": [
+        "chat_id"
+      ],
+      "tableTo": "chats",
+      "columnsTo": [
+        "id"
+      ],
+      "onUpdate": "NO ACTION",
+      "onDelete": "NO ACTION",
+      "nameExplicit": false,
+      "name": "fk_chat_members_chat_id_chats_id_fk",
+      "entityType": "fks",
+      "table": "chat_members"
+    },
+    {
+      "columns": [
+        "patient_id"
+      ],
+      "tableTo": "patients",
+      "columnsTo": [
+        "id"
+      ],
+      "onUpdate": "NO ACTION",
+      "onDelete": "NO ACTION",
+      "nameExplicit": false,
+      "name": "fk_chat_members_patient_id_patients_id_fk",
+      "entityType": "fks",
+      "table": "chat_members"
+    },
+    {
+      "columns": [
+        "chat_id"
+      ],
+      "tableTo": "chats",
+      "columnsTo": [
+        "id"
+      ],
+      "onUpdate": "NO ACTION",
+      "onDelete": "NO ACTION",
+      "nameExplicit": false,
+      "name": "fk_check_in_preferences_chat_id_chats_id_fk",
+      "entityType": "fks",
+      "table": "check_in_preferences"
+    },
+    {
+      "columns": [
         "session_id"
       ],
       "tableTo": "therapy_sessions",
@@ -415,6 +736,36 @@
       "name": "fk_clinical_artifacts_patient_id_patients_id_fk",
       "entityType": "fks",
       "table": "clinical_artifacts"
+    },
+    {
+      "columns": [
+        "chat_id"
+      ],
+      "tableTo": "chats",
+      "columnsTo": [
+        "id"
+      ],
+      "onUpdate": "NO ACTION",
+      "onDelete": "NO ACTION",
+      "nameExplicit": false,
+      "name": "fk_onboardings_chat_id_chats_id_fk",
+      "entityType": "fks",
+      "table": "onboardings"
+    },
+    {
+      "columns": [
+        "patient_id"
+      ],
+      "tableTo": "patients",
+      "columnsTo": [
+        "id"
+      ],
+      "onUpdate": "NO ACTION",
+      "onDelete": "NO ACTION",
+      "nameExplicit": false,
+      "name": "fk_onboardings_patient_id_patients_id_fk",
+      "entityType": "fks",
+      "table": "onboardings"
     },
     {
       "columns": [
@@ -448,6 +799,48 @@
     },
     {
       "columns": [
+        "chat_id"
+      ],
+      "tableTo": "chats",
+      "columnsTo": [
+        "id"
+      ],
+      "onUpdate": "NO ACTION",
+      "onDelete": "NO ACTION",
+      "nameExplicit": false,
+      "name": "fk_therapy_sessions_chat_id_chats_id_fk",
+      "entityType": "fks",
+      "table": "therapy_sessions"
+    },
+    {
+      "columns": [
+        "id"
+      ],
+      "nameExplicit": false,
+      "name": "chat_members_pk",
+      "table": "chat_members",
+      "entityType": "pks"
+    },
+    {
+      "columns": [
+        "id"
+      ],
+      "nameExplicit": false,
+      "name": "chats_pk",
+      "table": "chats",
+      "entityType": "pks"
+    },
+    {
+      "columns": [
+        "id"
+      ],
+      "nameExplicit": false,
+      "name": "check_in_preferences_pk",
+      "table": "check_in_preferences",
+      "entityType": "pks"
+    },
+    {
+      "columns": [
         "id"
       ],
       "nameExplicit": false,
@@ -462,6 +855,15 @@
       "nameExplicit": false,
       "name": "grammy_sessions_pk",
       "table": "grammy_sessions",
+      "entityType": "pks"
+    },
+    {
+      "columns": [
+        "id"
+      ],
+      "nameExplicit": false,
+      "name": "onboardings_pk",
+      "table": "onboardings",
       "entityType": "pks"
     },
     {
@@ -490,6 +892,66 @@
       "name": "therapy_sessions_pk",
       "table": "therapy_sessions",
       "entityType": "pks"
+    },
+    {
+      "columns": [
+        {
+          "value": "chat_id",
+          "isExpression": false
+        },
+        {
+          "value": "patient_id",
+          "isExpression": false
+        }
+      ],
+      "isUnique": true,
+      "where": null,
+      "origin": "manual",
+      "name": "chat_members_chat_id_patient_id_idx",
+      "entityType": "indexes",
+      "table": "chat_members"
+    },
+    {
+      "columns": [
+        {
+          "value": "patient_id",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "chat_members_patient_id_idx",
+      "entityType": "indexes",
+      "table": "chat_members"
+    },
+    {
+      "columns": [
+        {
+          "value": "telegram_chat_id",
+          "isExpression": false
+        }
+      ],
+      "isUnique": true,
+      "where": null,
+      "origin": "manual",
+      "name": "chats_telegram_chat_id_idx",
+      "entityType": "indexes",
+      "table": "chats"
+    },
+    {
+      "columns": [
+        {
+          "value": "chat_id",
+          "isExpression": false
+        }
+      ],
+      "isUnique": true,
+      "where": null,
+      "origin": "manual",
+      "name": "check_in_preferences_chat_id_idx",
+      "entityType": "indexes",
+      "table": "check_in_preferences"
     },
     {
       "columns": [
@@ -544,6 +1006,42 @@
     {
       "columns": [
         {
+          "value": "patient_id",
+          "isExpression": false
+        },
+        {
+          "value": "status",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "onboardings_patient_id_status_idx",
+      "entityType": "indexes",
+      "table": "onboardings"
+    },
+    {
+      "columns": [
+        {
+          "value": "chat_id",
+          "isExpression": false
+        },
+        {
+          "value": "status",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "onboardings_chat_id_status_idx",
+      "entityType": "indexes",
+      "table": "onboardings"
+    },
+    {
+      "columns": [
+        {
           "value": "telegram_id",
           "isExpression": false
         }
@@ -580,10 +1078,6 @@
           "isExpression": false
         },
         {
-          "value": "status",
-          "isExpression": false
-        },
-        {
           "value": "started_at",
           "isExpression": false
         }
@@ -591,7 +1085,7 @@
       "isUnique": false,
       "where": null,
       "origin": "manual",
-      "name": "sessions_chat_id_status_started_at_idx",
+      "name": "sessions_chat_id_started_at_idx",
       "entityType": "indexes",
       "table": "therapy_sessions"
     },

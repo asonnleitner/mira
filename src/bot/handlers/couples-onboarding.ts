@@ -8,6 +8,8 @@ import { FORMATTING_INSTRUCTIONS } from '~/agent/system-prompt'
 import { isStaleSessionError } from '~/agent/therapist'
 import { sendMarkdownV2 } from '~/bot/utils/telegram-send'
 import { ANTHROPIC_MODEL_CLAUDE_SONNET, ATTR_TELEGRAM_CHAT_ID } from '~/constants'
+import { addChatMember, findOrCreateChat, getChatMembers } from '~/db/queries/chats'
+import { completeOnboarding as completeOnboardingRecord, createOnboarding, findOnboarding, updateOnboardingSdkSessionId } from '~/db/queries/onboardings'
 import { findPatientByTelegramId } from '~/db/queries/patients'
 import { couplesDir, relationshipProfilePath } from '~/paths'
 import { writeRelationshipProfile } from '~/storage/profile'
@@ -15,6 +17,8 @@ import { logger } from '~/telemetry/logger'
 import { withSpan } from '~/telemetry/tracing'
 
 interface CouplesOnboardingSession {
+  onboardingId: number
+  internalChatId: number
   sdkSessionId?: string
   partnerIds: Set<number>
   partnerNames: Map<number, string>
@@ -71,7 +75,7 @@ function clearTimers(state: CouplesOnboardingSession): void {
   }
 }
 
-function createCouplesOnboardingTools(chatId: number) {
+function createCouplesOnboardingTools(chatId: number, onboardingId: number) {
   let resolveCompletion: (() => void) | null = null
 
   const completionPromise = new Promise<void>((resolve) => {
@@ -109,6 +113,9 @@ function createCouplesOnboardingTools(chatId: number) {
           catch (err) {
             logger.warn(`[couples-onboarding] Failed to write RELATIONSHIP.md for chat ${chatId}, will be regenerated`, err)
           }
+
+          // Mark onboarding record as complete
+          await completeOnboardingRecord(onboardingId)
 
           logger.info(`[couples-onboarding] Completed onboarding for chat ${chatId} (${args.partner1} & ${args.partner2})`)
 
@@ -148,21 +155,22 @@ async function resolvePartnerContext(state: CouplesOnboardingSession): Promise<s
 
 async function runCouplesOnboardingAgent(
   ctx: BotContext,
-  chatId: number,
+  telegramChatId: number,
+  onboardingId: number,
   userMessage: string,
   sdkSessionId?: string,
 ): Promise<string> {
-  const state = couplesOnboardingState.get(chatId)
+  const state = couplesOnboardingState.get(telegramChatId)
 
   if (!state)
     return ''
 
   const partnerContext = await resolvePartnerContext(state)
-  const { server } = createCouplesOnboardingTools(chatId)
+  const { server } = createCouplesOnboardingTools(telegramChatId, onboardingId)
 
   const systemPrompt = COUPLES_ONBOARDING_SYSTEM_PROMPT + partnerContext
   const allowedTools = ['mcp__couples-onboarding-tools__complete_couples_onboarding']
-  const cwd = couplesDir(chatId)
+  const cwd = couplesDir(telegramChatId)
 
   // Ensure cwd exists before SDK subprocess starts
   await mkdir(cwd, { recursive: true })
@@ -173,7 +181,7 @@ async function runCouplesOnboardingAgent(
       label: 'couples-onboarding',
       attributes: {
         [ATTR_GEN_AI_AGENT_NAME]: 'couples-onboarding',
-        [ATTR_TELEGRAM_CHAT_ID]: chatId,
+        [ATTR_TELEGRAM_CHAT_ID]: telegramChatId,
       },
     },
     {
@@ -202,7 +210,7 @@ async function runCouplesOnboardingAgent(
 
   let queryResult: Awaited<ReturnType<typeof tracedQuery>>
 
-  logger.debug(`[couples-onboarding] Running agent: chatId=${chatId} resume=${!!sdkSessionId} cwd=${cwd}`)
+  logger.debug(`[couples-onboarding] Running agent: chatId=${telegramChatId} resume=${!!sdkSessionId} cwd=${cwd}`)
 
   try {
     queryResult = await tracedQuery(...queryArgs(sdkSessionId))
@@ -221,16 +229,18 @@ async function runCouplesOnboardingAgent(
     }
   }
 
-  logger.debug(`[couples-onboarding] Agent completed: chatId=${chatId} responseLength=${queryResult.response.length}`)
+  logger.debug(`[couples-onboarding] Agent completed: chatId=${telegramChatId} responseLength=${queryResult.response.length}`)
 
-  if (state)
+  if (state) {
     state.sdkSessionId = queryResult.sessionId
+    await updateOnboardingSdkSessionId(state.onboardingId, queryResult.sessionId)
+  }
 
   return queryResult.response
 }
 
-function setupTimers(ctx: BotContext, chatId: number): void {
-  const state = couplesOnboardingState.get(chatId)
+function setupTimers(ctx: BotContext, telegramChatId: number): void {
+  const state = couplesOnboardingState.get(telegramChatId)
 
   if (!state)
     return
@@ -242,7 +252,7 @@ function setupTimers(ctx: BotContext, chatId: number): void {
 
   // Reminder timer (5 minutes)
   state.reminderTimer = setTimeout(async () => {
-    const currentState = couplesOnboardingState.get(chatId)
+    const currentState = couplesOnboardingState.get(telegramChatId)
 
     if (!currentState || currentState.reminderSent)
       return
@@ -260,7 +270,7 @@ function setupTimers(ctx: BotContext, chatId: number): void {
 
     try {
       await sendMarkdownV2({
-        chatId,
+        chatId: telegramChatId,
         text: `Just a gentle reminder — I'd love to hear from both of you\\. If *${missingName}* doesn't respond soon, I'll continue with what we have so far\\.`,
         api: ctx.api,
       })
@@ -272,7 +282,7 @@ function setupTimers(ctx: BotContext, chatId: number): void {
 
   // Deadline timer (10 minutes)
   state.deadlineTimer = setTimeout(async () => {
-    const currentState = couplesOnboardingState.get(chatId)
+    const currentState = couplesOnboardingState.get(telegramChatId)
 
     if (!currentState)
       return
@@ -287,19 +297,19 @@ function setupTimers(ctx: BotContext, chatId: number): void {
     const systemMessage = `[System]: ${missingName} has not responded. Proceed with available information.`
 
     try {
-      const buffer = couplesOnboardingBuffer.get(chatId)
+      const buffer = couplesOnboardingBuffer.get(telegramChatId)
 
       // If already processing a user message, just push the system message into the buffer
       if (buffer?.processing) {
         buffer.messages.push(systemMessage)
         buffer.ctx = ctx
-        logger.debug(`[couples-onboarding] Deadline message buffered for chat ${chatId}`)
+        logger.debug(`[couples-onboarding] Deadline message buffered for chat ${telegramChatId}`)
         return
       }
 
       // Start the drain loop for the system message
-      couplesOnboardingBuffer.set(chatId, { messages: [systemMessage], processing: true, ctx })
-      await drainCouplesOnboardingBuffer(chatId, currentState)
+      couplesOnboardingBuffer.set(telegramChatId, { messages: [systemMessage], processing: true, ctx })
+      await drainCouplesOnboardingBuffer(telegramChatId, currentState)
     }
     catch (err) {
       logger.error('[couples-onboarding] Failed to process deadline:', err)
@@ -312,62 +322,100 @@ export function isCouplesOnboarding(chatId: number): boolean {
 }
 
 export async function startCouplesOnboarding(ctx: BotContext): Promise<void> {
-  const chatId = ctx.chat!.id
+  const telegramChatId = ctx.chat!.id
   const telegramId = ctx.from!.id
 
-  return withSpan('bot.couples-onboarding.start', { [ATTR_TELEGRAM_CHAT_ID]: chatId }, async () => {
-    // Look up sender's patient record for their name
+  return withSpan('bot.couples-onboarding.start', { [ATTR_TELEGRAM_CHAT_ID]: telegramChatId }, async () => {
+    // Resolve internal chat entity
+    const chat = await findOrCreateChat(telegramChatId, 'couples')
+
+    // Look up sender's patient record for their name and register as member
     const patient = await findPatientByTelegramId(telegramId)
     const senderName = patient?.firstName ?? ctx.from!.first_name ?? 'Partner'
 
-    logger.info(`[couples-onboarding] Starting onboarding for chat ${chatId}, initiated by ${senderName}`)
+    if (patient) {
+      await addChatMember(chat.id, patient.id)
+    }
+
+    logger.info(`[couples-onboarding] Starting onboarding for chat ${telegramChatId}, initiated by ${senderName}`)
+
+    // Check for existing in-progress onboarding in DB (survives restart)
+    let onboarding = await findOnboarding('couples', { chatId: chat.id })
+    let resumeSessionId: string | undefined
+
+    if (onboarding?.sdkSessionId) {
+      resumeSessionId = onboarding.sdkSessionId
+      logger.info(`[couples-onboarding] Found existing onboarding ${onboarding.id} with SDK session, resuming`)
+    }
+    else if (!onboarding) {
+      onboarding = await createOnboarding('couples', { chatId: chat.id })
+      logger.info(`[couples-onboarding] Created new onboarding record ${onboarding.id}`)
+    }
+
+    // Build partner names from chat_members
+    const partnerNames = new Map<number, string>([[telegramId, senderName]])
+    const members = await getChatMembers(chat.id)
+    for (const member of members) {
+      if (!partnerNames.has(member.telegramId)) {
+        partnerNames.set(member.telegramId, member.firstName ?? 'Partner')
+      }
+    }
 
     const state: CouplesOnboardingSession = {
+      onboardingId: onboarding.id,
+      internalChatId: chat.id,
+      sdkSessionId: resumeSessionId,
       partnerIds: new Set([telegramId]),
-      partnerNames: new Map([[telegramId, senderName]]),
+      partnerNames,
       lastResponseAt: Date.now(),
       reminderSent: false,
     }
 
-    couplesOnboardingState.set(chatId, state)
+    couplesOnboardingState.set(telegramChatId, state)
     // Acquire buffer lock before initial agent call to prevent concurrent calls
-    couplesOnboardingBuffer.set(chatId, { messages: [], processing: true, ctx })
+    couplesOnboardingBuffer.set(telegramChatId, { messages: [], processing: true, ctx })
 
     try {
+      const initialMessage = resumeSessionId
+        ? `[${senderName}]: ${ctx.message?.text ?? 'Hello'}\n[System]: The couple has reconnected. Continue the onboarding conversation from where you left off.`
+        : `[${senderName}]: ${ctx.message?.text ?? 'Hello'}`
+
       const response = await runCouplesOnboardingAgent(
         ctx,
-        chatId,
-        `[${senderName}]: ${ctx.message?.text ?? 'Hello'}`,
+        telegramChatId,
+        onboarding.id,
+        initialMessage,
+        resumeSessionId,
       )
 
       if (response) {
-        await sendMarkdownV2({ chatId, text: response, api: ctx.api })
-        setupTimers(ctx, chatId)
+        await sendMarkdownV2({ chatId: telegramChatId, text: response, api: ctx.api })
+        setupTimers(ctx, telegramChatId)
       }
       else {
-        logger.error(`[couples-onboarding] Empty response from onboarding agent for chat ${chatId}`)
+        logger.error(`[couples-onboarding] Empty response from onboarding agent for chat ${telegramChatId}`)
         await ctx.reply('I\'m having trouble starting up. Please try again in a moment.')
       }
     }
     catch (err) {
-      logger.error(`[couples-onboarding] Error during initial onboarding for chat ${chatId}:`, err)
+      logger.error(`[couples-onboarding] Error during initial onboarding for chat ${telegramChatId}:`, err)
       await ctx.reply('I\'m having trouble starting up. Please try again in a moment.')
     }
 
     // Drain any messages that arrived during the initial agent call
-    if (couplesOnboardingState.has(chatId)) {
-      await drainCouplesOnboardingBuffer(chatId, state)
+    if (couplesOnboardingState.has(telegramChatId)) {
+      await drainCouplesOnboardingBuffer(telegramChatId, state)
     }
     else {
-      couplesOnboardingBuffer.delete(chatId)
+      couplesOnboardingBuffer.delete(telegramChatId)
     }
   })
 }
 
 export async function handleCouplesOnboardingMessage(ctx: BotContext): Promise<void> {
-  const chatId = ctx.chat!.id
+  const telegramChatId = ctx.chat!.id
   const telegramId = ctx.from!.id
-  const state = couplesOnboardingState.get(chatId)
+  const state = couplesOnboardingState.get(telegramChatId)
 
   if (!state)
     return
@@ -382,6 +430,11 @@ export async function handleCouplesOnboardingMessage(ctx: BotContext): Promise<v
     const patient = await findPatientByTelegramId(telegramId)
     const name = patient?.firstName ?? ctx.from!.first_name ?? 'Partner'
     state.partnerNames.set(telegramId, name)
+
+    // Add as chat member in DB
+    if (patient) {
+      await addChatMember(state.internalChatId, patient.id)
+    }
   }
 
   state.partnerIds.add(telegramId)
@@ -393,27 +446,27 @@ export async function handleCouplesOnboardingMessage(ctx: BotContext): Promise<v
   const senderName = state.partnerNames.get(telegramId) ?? 'Partner'
   const formattedMessage = `[${senderName}]: ${text}`
 
-  const buffer = couplesOnboardingBuffer.get(chatId)
+  const buffer = couplesOnboardingBuffer.get(telegramChatId)
 
   // If already processing, just add to the buffer and return
   if (buffer?.processing) {
     buffer.messages.push(formattedMessage)
     buffer.ctx = ctx
-    logger.debug(`[couples-onboarding] Buffered message from ${senderName} in chat ${chatId} (${buffer.messages.length} pending)`)
+    logger.debug(`[couples-onboarding] Buffered message from ${senderName} in chat ${telegramChatId} (${buffer.messages.length} pending)`)
     return
   }
 
   // Initialize buffer and start processing
-  couplesOnboardingBuffer.set(chatId, { messages: [formattedMessage], processing: true, ctx })
+  couplesOnboardingBuffer.set(telegramChatId, { messages: [formattedMessage], processing: true, ctx })
 
-  return withSpan('bot.couples-onboarding.message', { [ATTR_TELEGRAM_CHAT_ID]: chatId }, async () => {
-    await drainCouplesOnboardingBuffer(chatId, state)
+  return withSpan('bot.couples-onboarding.message', { [ATTR_TELEGRAM_CHAT_ID]: telegramChatId }, async () => {
+    await drainCouplesOnboardingBuffer(telegramChatId, state)
   })
 }
 
-async function drainCouplesOnboardingBuffer(chatId: number, state: CouplesOnboardingSession): Promise<void> {
-  while (couplesOnboardingBuffer.has(chatId)) {
-    const buffer = couplesOnboardingBuffer.get(chatId)!
+async function drainCouplesOnboardingBuffer(telegramChatId: number, state: CouplesOnboardingSession): Promise<void> {
+  while (couplesOnboardingBuffer.has(telegramChatId)) {
+    const buffer = couplesOnboardingBuffer.get(telegramChatId)!
     if (buffer.messages.length === 0)
       break
 
@@ -421,41 +474,42 @@ async function drainCouplesOnboardingBuffer(chatId: number, state: CouplesOnboar
     const ctx = buffer.ctx
     buffer.messages = []
 
-    logger.debug(`[couples-onboarding] Processing messages for chat ${chatId}`)
+    logger.debug(`[couples-onboarding] Processing messages for chat ${telegramChatId}`)
 
     // Show typing indicator
-    ctx.api.sendChatAction(chatId, 'typing').catch(() => {})
+    ctx.api.sendChatAction(telegramChatId, 'typing').catch(() => {})
 
     const response = await runCouplesOnboardingAgent(
       ctx,
-      chatId,
+      telegramChatId,
+      state.onboardingId,
       combinedMessage,
       state.sdkSessionId,
     )
 
     if (response) {
-      await sendMarkdownV2({ chatId, text: response, api: ctx.api })
+      await sendMarkdownV2({ chatId: telegramChatId, text: response, api: ctx.api })
       // Only set up timers if onboarding is still active (tool may have completed it)
-      if (couplesOnboardingState.has(chatId)) {
-        setupTimers(ctx, chatId)
+      if (couplesOnboardingState.has(telegramChatId)) {
+        setupTimers(ctx, telegramChatId)
       }
     }
     else {
-      logger.error(`[couples-onboarding] Empty response from onboarding agent for chat ${chatId}`)
+      logger.error(`[couples-onboarding] Empty response from onboarding agent for chat ${telegramChatId}`)
       await ctx.reply('I\'m having trouble processing your message. Please try again.')
     }
 
     // Check if more messages arrived during processing
-    const currentBuffer = couplesOnboardingBuffer.get(chatId)
+    const currentBuffer = couplesOnboardingBuffer.get(telegramChatId)
     if (!currentBuffer || currentBuffer.messages.length === 0)
       break
   }
 
   // Done processing — clean up
-  const buffer = couplesOnboardingBuffer.get(chatId)
+  const buffer = couplesOnboardingBuffer.get(telegramChatId)
   if (buffer) {
     buffer.processing = false
     if (buffer.messages.length === 0)
-      couplesOnboardingBuffer.delete(chatId)
+      couplesOnboardingBuffer.delete(telegramChatId)
   }
 }

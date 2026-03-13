@@ -59,13 +59,15 @@ async function runCheckInScan(api: Api): Promise<void> {
             language: patientInfo?.preferredLanguage ?? undefined,
           })
 
-          await sendMarkdownV2({ chatId: session.chatId, text: message, api })
+          // Use telegramChatId for Telegram API (raw Telegram ID)
+          await sendMarkdownV2({ chatId: session.telegramChatId, text: message, api })
+          // Use internal chatId for DB update
           await updateLastCheckIn(session.chatId)
 
-          logger.info(`[check-in] Sent check-in to chat ${session.chatId} (${session.sessionType}, unanswered: ${session.unansweredCount})`)
+          logger.info(`[check-in] Sent check-in to chat ${session.telegramChatId} (${session.sessionType}, unanswered: ${session.unansweredCount})`)
         }
         catch (err) {
-          logger.error(`[check-in] Failed to send check-in to chat ${session.chatId}:`, err)
+          logger.error(`[check-in] Failed to send check-in to chat ${session.telegramChatId}:`, err)
         }
       })
     }

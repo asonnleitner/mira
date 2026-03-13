@@ -27,10 +27,12 @@ export async function findSessionsDueForCheckIn() {
   const now = new Date()
 
   // Get all active sessions with their check-in preferences
+  // Both tables now use internal chatId (FK to chats.id)
   const sessions = await withDbSpan(
     db.select({
       sessionId: tables.therapySessions.id,
       chatId: tables.therapySessions.chatId,
+      telegramChatId: tables.chats.telegramChatId,
       sessionType: tables.therapySessions.type,
       lastMessageAt: tables.therapySessions.lastMessageAt,
       intervalDays: tables.checkInPreferences.intervalDays,
@@ -41,6 +43,10 @@ export async function findSessionsDueForCheckIn() {
       .innerJoin(
         tables.checkInPreferences,
         eq(tables.therapySessions.chatId, tables.checkInPreferences.chatId),
+      )
+      .innerJoin(
+        tables.chats,
+        eq(tables.therapySessions.chatId, tables.chats.id),
       )
       .where(
         and(
@@ -72,16 +78,15 @@ export async function findSessionsDueForCheckIn() {
 }
 
 export async function getPatientInfoForChat(chatId: number) {
-  // Find patient(s) associated with this chatId via sessions and messages
-  // For individual chats, chatId = telegramId for private chats
-  // Look up patients who have sent messages in sessions for this chat
+  // Use chat_members join to find patients for this internal chatId
   const rows = await withDbSpan(
     db.select({
       firstName: tables.patients.firstName,
       preferredLanguage: tables.patients.preferredLanguage,
     })
-      .from(tables.patients)
-      .where(eq(tables.patients.telegramId, chatId))
+      .from(tables.chatMembers)
+      .innerJoin(tables.patients, eq(tables.chatMembers.patientId, tables.patients.id))
+      .where(eq(tables.chatMembers.chatId, chatId))
       .limit(1),
   )
 

@@ -1,5 +1,7 @@
 import type { BotContext } from '~/bot/context'
 import { Menu } from '@grammyjs/menu'
+import { detectChatMode } from '~/bot/router'
+import { findOrCreateChat } from '~/db/queries/chats'
 import { updateCheckInPreference } from '~/db/queries/check-in'
 import { logger } from '~/telemetry/logger'
 
@@ -11,11 +13,13 @@ export const checkInMenu = new Menu<BotContext>('check-in-menu')
       return pref ? '\u2713 Enabled' : '\u25CB Disabled'
     },
     async (ctx) => {
-      const chatId = ctx.chat!.id
+      const telegramChatId = ctx.chat!.id
       const telegramId = ctx.from!.id
+      const chatMode = detectChatMode(ctx)
+      const chat = await findOrCreateChat(telegramChatId, chatMode)
       const newEnabled = !ctx.session.checkInEnabled
-      await updateCheckInPreference(chatId, telegramId, { enabled: newEnabled })
-      logger.debug(`[check-in-menu] Toggle: chatId=${chatId} enabled=${newEnabled}`)
+      await updateCheckInPreference(chat.id, telegramId, { enabled: newEnabled })
+      logger.debug(`[check-in-menu] Toggle: chatId=${telegramChatId} enabled=${newEnabled}`)
       ctx.session.checkInEnabled = newEnabled
       ctx.menu.update()
     },
@@ -54,10 +58,12 @@ export const checkInMenu = new Menu<BotContext>('check-in-menu')
   )
 
 async function setInterval_(ctx: BotContext, days: number) {
-  const chatId = ctx.chat!.id
+  const telegramChatId = ctx.chat!.id
   const telegramId = ctx.from!.id
-  await updateCheckInPreference(chatId, telegramId, { intervalDays: days })
-  logger.debug(`[check-in-menu] Interval changed: chatId=${chatId} days=${days}`)
+  const chatMode = detectChatMode(ctx)
+  const chat = await findOrCreateChat(telegramChatId, chatMode)
+  await updateCheckInPreference(chat.id, telegramId, { intervalDays: days })
+  logger.debug(`[check-in-menu] Interval changed: chatId=${telegramChatId} days=${days}`)
   ctx.session.checkInIntervalDays = days
   ctx.menu.update()
 }
