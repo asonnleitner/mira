@@ -11,6 +11,7 @@ import { ANTHROPIC_MODEL_CLAUDE_SONNET, ATTR_TELEGRAM_CHAT_ID } from '~/constant
 import { findPatientByTelegramId } from '~/db/queries/patients'
 import { writeRelationshipProfile } from '~/storage/profile'
 import { logger } from '~/telemetry/logger'
+import { withSpan } from '~/telemetry/tracing'
 
 interface CouplesOnboardingSession {
   sdkSessionId?: string
@@ -108,16 +109,23 @@ function createCouplesOnboardingTools(chatId: number) {
           sharedGoals: z.array(z.string()).optional().describe('Shared goals for therapy'),
         },
         async (args) => {
-          const relationshipPath = join(config.DATA_DIR, 'couples', String(chatId), 'RELATIONSHIP.md')
+          // Write RELATIONSHIP.md — best-effort, can be regenerated
+          try {
+            const relationshipPath = join(config.DATA_DIR, 'couples', String(chatId), 'RELATIONSHIP.md')
+            await writeRelationshipProfile(relationshipPath, {
+              chatId,
+              partner1: args.partner1,
+              partner2: args.partner2,
+              duration: args.duration,
+              reason: args.reason,
+              sharedGoals: args.sharedGoals,
+            })
+          }
+          catch (err) {
+            logger.warn(`[couples-onboarding] Failed to write RELATIONSHIP.md for chat ${chatId}, will be regenerated`, err)
+          }
 
-          await writeRelationshipProfile(relationshipPath, {
-            chatId,
-            partner1: args.partner1,
-            partner2: args.partner2,
-            duration: args.duration,
-            reason: args.reason,
-            sharedGoals: args.sharedGoals,
-          })
+          logger.info(`[couples-onboarding] Completed onboarding for chat ${chatId} (${args.partner1} & ${args.partner2})`)
 
           const state = couplesOnboardingState.get(chatId)
           if (state) {
@@ -304,33 +312,37 @@ export async function startCouplesOnboarding(ctx: BotContext): Promise<void> {
   const chatId = ctx.chat!.id
   const telegramId = ctx.from!.id
 
-  // Look up sender's patient record for their name
-  const patient = await findPatientByTelegramId(telegramId)
-  const senderName = patient?.firstName ?? ctx.from!.first_name ?? 'Partner'
+  return withSpan('bot.couples-onboarding.start', { [ATTR_TELEGRAM_CHAT_ID]: chatId }, async () => {
+    // Look up sender's patient record for their name
+    const patient = await findPatientByTelegramId(telegramId)
+    const senderName = patient?.firstName ?? ctx.from!.first_name ?? 'Partner'
 
-  const state: CouplesOnboardingSession = {
-    partnerIds: new Set([telegramId]),
-    partnerNames: new Map([[telegramId, senderName]]),
-    lastResponseAt: Date.now(),
-    reminderSent: false,
-  }
+    logger.info(`[couples-onboarding] Starting onboarding for chat ${chatId}, initiated by ${senderName}`)
 
-  couplesOnboardingState.set(chatId, state)
+    const state: CouplesOnboardingSession = {
+      partnerIds: new Set([telegramId]),
+      partnerNames: new Map([[telegramId, senderName]]),
+      lastResponseAt: Date.now(),
+      reminderSent: false,
+    }
 
-  const response = await runCouplesOnboardingAgent(
-    ctx,
-    chatId,
-    `[${senderName}]: ${ctx.message?.text ?? 'Hello'}`,
-  )
+    couplesOnboardingState.set(chatId, state)
 
-  if (response) {
-    await sendMarkdownV2({ chatId, text: response, api: ctx.api })
-    setupTimers(ctx, chatId)
-  }
-  else {
-    logger.error(`[couples-onboarding] Empty response from onboarding agent for chat ${chatId}`)
-    await ctx.reply('I\'m having trouble starting up. Please try again in a moment.')
-  }
+    const response = await runCouplesOnboardingAgent(
+      ctx,
+      chatId,
+      `[${senderName}]: ${ctx.message?.text ?? 'Hello'}`,
+    )
+
+    if (response) {
+      await sendMarkdownV2({ chatId, text: response, api: ctx.api })
+      setupTimers(ctx, chatId)
+    }
+    else {
+      logger.error(`[couples-onboarding] Empty response from onboarding agent for chat ${chatId}`)
+      await ctx.reply('I\'m having trouble starting up. Please try again in a moment.')
+    }
+  })
 }
 
 export async function handleCouplesOnboardingMessage(ctx: BotContext): Promise<void> {
@@ -345,40 +357,43 @@ export async function handleCouplesOnboardingMessage(ctx: BotContext): Promise<v
   if (!text)
     return
 
-  // Add this partner if new
-  if (!state.partnerNames.has(telegramId)) {
-    const patient = await findPatientByTelegramId(telegramId)
-    const name = patient?.firstName ?? ctx.from!.first_name ?? 'Partner'
-    state.partnerNames.set(telegramId, name)
-  }
-
-  state.partnerIds.add(telegramId)
-
-  // Reset timers on any incoming message
-  clearTimers(state)
-  state.reminderSent = false
-
-  const senderName = state.partnerNames.get(telegramId) ?? 'Partner'
-
-  // Show typing indicator
-  ctx.api.sendChatAction(chatId, 'typing').catch(() => {})
-
-  const response = await runCouplesOnboardingAgent(
-    ctx,
-    chatId,
-    `[${senderName}]: ${text}`,
-    state.sdkSessionId,
-  )
-
-  if (response) {
-    await sendMarkdownV2({ chatId, text: response, api: ctx.api })
-    // Only set up timers if onboarding is still active (tool may have completed it)
-    if (couplesOnboardingState.has(chatId)) {
-      setupTimers(ctx, chatId)
+  return withSpan('bot.couples-onboarding.message', { [ATTR_TELEGRAM_CHAT_ID]: chatId }, async () => {
+    // Add this partner if new
+    if (!state.partnerNames.has(telegramId)) {
+      const patient = await findPatientByTelegramId(telegramId)
+      const name = patient?.firstName ?? ctx.from!.first_name ?? 'Partner'
+      state.partnerNames.set(telegramId, name)
     }
-  }
-  else {
-    logger.error(`[couples-onboarding] Empty response from onboarding agent for chat ${chatId}`)
-    await ctx.reply('I\'m having trouble processing your message. Please try again.')
-  }
+
+    state.partnerIds.add(telegramId)
+
+    // Reset timers on any incoming message
+    clearTimers(state)
+    state.reminderSent = false
+
+    const senderName = state.partnerNames.get(telegramId) ?? 'Partner'
+    logger.debug(`[couples-onboarding] Received message from ${senderName} in chat ${chatId}`)
+
+    // Show typing indicator
+    ctx.api.sendChatAction(chatId, 'typing').catch(() => {})
+
+    const response = await runCouplesOnboardingAgent(
+      ctx,
+      chatId,
+      `[${senderName}]: ${text}`,
+      state.sdkSessionId,
+    )
+
+    if (response) {
+      await sendMarkdownV2({ chatId, text: response, api: ctx.api })
+      // Only set up timers if onboarding is still active (tool may have completed it)
+      if (couplesOnboardingState.has(chatId)) {
+        setupTimers(ctx, chatId)
+      }
+    }
+    else {
+      logger.error(`[couples-onboarding] Empty response from onboarding agent for chat ${chatId}`)
+      await ctx.reply('I\'m having trouble processing your message. Please try again.')
+    }
+  })
 }

@@ -13,6 +13,7 @@ import { completeOnboarding, createPatient, findPatientByTelegramId } from '~/db
 import { PatientProfileSchema } from '~/db/schema/patients'
 import { writeProfile } from '~/storage/profile'
 import { logger } from '~/telemetry/logger'
+import { withSpan } from '~/telemetry/tracing'
 
 interface OnboardingSession {
   sdkSessionId?: string
@@ -111,17 +112,23 @@ function createOnboardingTools(ctx: BotContext, telegramId: number) {
             preferredLanguage: args.preferredLanguage,
           })
 
-          // Persist to DB
+          // Persist to DB — source of truth
           const patient = await completeOnboarding(telegramId, profile)
 
           if (patient) {
             ctx.session.patientId = patient.id
           }
 
-          // Write PROFILE.md
-          const profilePath = join(config.DATA_DIR, 'patients', telegramId.toString(), 'PROFILE.md')
+          // Write PROFILE.md — best-effort, note-taker regenerates if missing
+          try {
+            const profilePath = join(config.DATA_DIR, 'patients', telegramId.toString(), 'PROFILE.md')
+            await writeProfile(profilePath, telegramId, profile)
+          }
+          catch (err) {
+            logger.warn(`[onboarding] Failed to write PROFILE.md for user ${telegramId}, will be regenerated`, err)
+          }
 
-          await writeProfile(profilePath, telegramId, profile)
+          logger.info(`[onboarding] Completed onboarding for user ${telegramId} (${profile.fullName})`)
 
           onboardingState.delete(telegramId)
           resolveCompletion?.(profile)
@@ -216,35 +223,41 @@ async function runOnboardingAgent(ctx: BotContext, telegramId: number, userMessa
 export async function startOnboarding(ctx: BotContext): Promise<void> {
   const telegramId = ctx.from!.id
 
-  // Ensure patient record exists
-  let patient = await findPatientByTelegramId(telegramId)
+  return withSpan('bot.onboarding.start', { [ATTR_TELEGRAM_USER_ID]: telegramId }, async () => {
+    // Ensure patient record exists
+    let patient = await findPatientByTelegramId(telegramId)
 
-  if (!patient) {
-    patient = await createPatient({
+    if (!patient) {
+      patient = await createPatient({
+        telegramId,
+        firstName: ctx.from!.first_name,
+        username: ctx.from!.username,
+      })
+      logger.info(`[onboarding] New patient created for user ${telegramId}`)
+    }
+    else {
+      logger.info(`[onboarding] Restarting onboarding for existing user ${telegramId}`)
+    }
+
+    ctx.session.patientId = patient.id
+
+    // Reset onboarding state (handles /start mid-onboarding)
+    onboardingState.set(telegramId, {})
+
+    const response = await runOnboardingAgent(
+      ctx,
       telegramId,
-      firstName: ctx.from!.first_name,
-      username: ctx.from!.username,
-    })
-  }
+      'The user just started the bot. Greet them and begin onboarding.',
+    )
 
-  ctx.session.patientId = patient.id
-
-  // Reset onboarding state (handles /start mid-onboarding)
-  onboardingState.set(telegramId, {})
-
-  const response = await runOnboardingAgent(
-    ctx,
-    telegramId,
-    'The user just started the bot. Greet them and begin onboarding.',
-  )
-
-  if (response) {
-    await replyMarkdownV2(ctx, response)
-  }
-  else {
-    logger.error(`[onboarding] Empty response from onboarding agent for user ${telegramId}`)
-    await ctx.reply('I\'m having trouble starting up. Please try /start again in a moment.')
-  }
+    if (response) {
+      await replyMarkdownV2(ctx, response)
+    }
+    else {
+      logger.error(`[onboarding] Empty response from onboarding agent for user ${telegramId}`)
+      await ctx.reply('I\'m having trouble starting up. Please try /start again in a moment.')
+    }
+  })
 }
 
 export function isOnboarding(telegramId: number): boolean {
@@ -263,13 +276,17 @@ export async function handleOnboardingMessage(ctx: BotContext): Promise<void> {
   if (!text)
     return
 
-  const response = await runOnboardingAgent(ctx, telegramId, text, state.sdkSessionId)
+  return withSpan('bot.onboarding.message', { [ATTR_TELEGRAM_USER_ID]: telegramId }, async () => {
+    logger.debug(`[onboarding] Received message from user ${telegramId}`)
 
-  if (response) {
-    await replyMarkdownV2(ctx, response)
-  }
-  else {
-    logger.error(`[onboarding] Empty response from onboarding agent for user ${telegramId}`)
-    await ctx.reply('I\'m having trouble processing your message. Please try again.')
-  }
+    const response = await runOnboardingAgent(ctx, telegramId, text, state.sdkSessionId)
+
+    if (response) {
+      await replyMarkdownV2(ctx, response)
+    }
+    else {
+      logger.error(`[onboarding] Empty response from onboarding agent for user ${telegramId}`)
+      await ctx.reply('I\'m having trouble processing your message. Please try again.')
+    }
+  })
 }
