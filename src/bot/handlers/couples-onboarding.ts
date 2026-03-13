@@ -4,6 +4,7 @@ import { createSdkMcpServer, tool } from '@anthropic-ai/claude-agent-sdk'
 import { ATTR_GEN_AI_AGENT_NAME, ATTR_GEN_AI_CONVERSATION_ID, GEN_AI_OPERATION_NAME_VALUE_INVOKE_AGENT } from '@opentelemetry/semantic-conventions/incubating'
 import * as z from 'zod'
 import { tracedQuery } from '~/agent/query'
+import { FORMATTING_INSTRUCTIONS } from '~/agent/system-prompt'
 import { isStaleSessionError } from '~/agent/therapist'
 import { sendMarkdownV2 } from '~/bot/utils/telegram-send'
 import { ANTHROPIC_MODEL_CLAUDE_SONNET, ATTR_TELEGRAM_CHAT_ID } from '~/constants'
@@ -49,32 +50,7 @@ Important guidelines:
 - Start by greeting both partners warmly and asking about their relationship.
 - Never use dashes as delimiters or separators in your responses. Dashes are only acceptable in list items.
 
-## Formatting
-Your responses are rendered in Telegram using MarkdownV2 parse mode. You MUST follow these formatting rules exactly:
-
-Supported syntax:
-- *bold* (single asterisk)
-- _italic_ (single underscore)
-- __underline__ (double underscore)
-- ~strikethrough~ (single tilde)
-- ||spoiler|| (double pipe)
-- \`inline code\` (single backtick)
-- Nesting is supported: *bold _italic bold_*
-
-CRITICAL: escape these characters with \\ when they appear as literal text (not as formatting markup):
-_ * [ ] ( ) ~ \` > # + - = | { } . !
-
-Examples of correct escaping:
-- "That costs 10\\.99" (escape the dot)
-- "Really\\!" (escape the exclamation mark)
-- "It's okay \\(I promise\\)" (escape parentheses)
-- "50\\-50 chance" (escape the hyphen)
-- "C\\+\\+ developer" (escape plus signs)
-
-Do NOT use:
-- Double asterisks for bold (**text**). Use single: *text*
-- Markdown headers (# Header)
-- Markdown links with unescaped special chars in display text`
+${FORMATTING_INSTRUCTIONS}`
 
 function clearTimers(state: CouplesOnboardingSession): void {
   if (state.reminderTimer) {

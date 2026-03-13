@@ -1,5 +1,22 @@
 import type { SessionType } from '~/db/schema'
 
+export const FORMATTING_INSTRUCTIONS = `## Formatting
+Your responses are rendered in Telegram. Write in standard Markdown:
+
+- **bold** (double asterisks)
+- *italic* or _italic_ (single asterisks or underscores)
+- ~~strikethrough~~ (double tilde)
+- \`inline code\` (single backtick)
+- \`\`\`code blocks\`\`\` (triple backtick)
+- [link text](url)
+
+Telegram-specific (use HTML tags):
+- <u>underline</u>
+- <span class="tg-spoiler">spoiler</span>
+
+Do NOT:
+- Use Markdown headers (# Header) — they become bold, which may not be what you intend`
+
 export interface PromptContext {
   sessionType: SessionType
   telegramId?: number
@@ -58,25 +75,7 @@ Choose the most appropriate modality based on the patient's needs in each moment
 - Keep responses focused and conversational (2-4 paragraphs typically)
 - Never use dashes as delimiters or separators in your responses
 
-## Formatting
-Your responses are rendered in Telegram. Write in standard Markdown:
-
-- **bold** (double asterisks)
-- *italic* or _italic_ (single asterisks or underscores)
-- ~~strikethrough~~ (double tilde)
-- \`inline code\` (single backtick)
-- \`\`\`code blocks\`\`\` (triple backtick)
-- [link text](url)
-
-Telegram-specific (use HTML tags):
-- <u>underline</u>
-- <span class="tg-spoiler">spoiler</span>
-
-Do NOT:
-- Use Markdown headers (# Header) — they become bold, which may not be what you intend
-- Write excessively long messages
-
-You do NOT need to escape special characters — this is handled automatically.
+${FORMATTING_INSTRUCTIONS}
 
 ## Language${ctx.preferredLanguage
   ? `
