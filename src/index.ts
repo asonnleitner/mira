@@ -21,31 +21,31 @@ async function main() {
     await mkdir(join(config.DATA_DIR, 'couples'), { recursive: true })
 
     healthServer = startHealthServer()
-    logger.info(`Health server listening on port ${healthServer.port}`)
+    logger.info(`[boot] Health server listening on port ${healthServer.port}`)
 
-    logger.info('Connecting to Telegram...')
+    logger.info('[boot] Connecting to Telegram...')
 
     const connectionTimeout = setTimeout(() => {
-      logger.warn('Bot has not connected to Telegram after 30s — check network, DNS, TLS, and BOT_TOKEN')
+      logger.warn('[boot] Bot has not connected to Telegram after 30s — check network, DNS, TLS, and BOT_TOKEN')
     }, 30_000)
 
     await bot.start({
       onStart: (botInfo) => {
         clearTimeout(connectionTimeout)
         setBotReady(true)
-        logger.info(`Bot @${botInfo.username} started!`)
+        logger.info(`[boot] Bot @${botInfo.username} started!`)
         checkInTimer = startCheckInScheduler(bot.api)
       },
     })
   }
   catch (err) {
-    logger.error('Bot crashed:', err)
+    logger.error('[boot] Bot crashed:', err)
     process.exit(1)
   }
 }
 
 async function shutdown() {
-  logger.warn('Shutting down...')
+  logger.warn('[boot] Shutting down...')
   try {
     if (checkInTimer)
       stopCheckInScheduler(checkInTimer)
@@ -53,7 +53,7 @@ async function shutdown() {
     await bot.stop()
   }
   catch (err) {
-    logger.error('Error during shutdown:', err)
+    logger.error('[boot] Error during shutdown:', err)
   }
   finally {
     await sdk.shutdown()
@@ -65,10 +65,10 @@ async function shutdown() {
 process.on('SIGINT', shutdown)
 process.on('SIGTERM', shutdown)
 process.on('unhandledRejection', (err) => {
-  logger.error('Unhandled rejection:', err)
-  shutdown().catch(err => logger.error('Shutdown error:', err))
+  logger.error('[boot] Unhandled rejection:', err)
+  shutdown().catch(err => logger.error('[boot] Shutdown error:', err))
 })
 
 main().catch((err) => {
-  logger.error('Error during startup:', err)
+  logger.error('[boot] Error during startup:', err)
 })

@@ -2,7 +2,7 @@ import type { SpanContext } from '@opentelemetry/api'
 import type { SessionContext } from '~/agent/context-assembler'
 import type { BotContext } from '~/bot/context'
 import type { SessionType } from '~/db/schema'
-import { runNoteTaker } from '~/agent/artifact-extractor'
+import { runNoteTaker } from '~/agent/note-taker'
 import { continueTherapySession, isStaleSessionError, startTherapySession } from '~/agent/therapist'
 import { handleCouplesOnboardingMessage, isCouplesOnboarding, startCouplesOnboarding } from '~/bot/handlers/couples-onboarding'
 import { handleOnboardingMessage, isOnboarding, startOnboarding } from '~/bot/handlers/onboarding'
@@ -360,7 +360,7 @@ async function processTherapyMessage(
     logger.debug(`[message] Note-taker dispatched for session ${session.id}`)
 
     runNoteTaker(sessionCtx, combinedMessage, response).catch(err =>
-      logger.error('Note-taker error:', err),
+      logger.error('[message] Note-taker error:', err),
     )
   }
   finally {

@@ -4,11 +4,11 @@ import { db } from '~/db'
 import { logger } from '~/telemetry/logger'
 
 try {
-  logger.info('Running database migrations...')
+  logger.info('[migrate] Running database migrations...')
   migrate(db, { migrationsFolder: './drizzle' })
-  logger.success('Migrations applied successfully')
+  logger.success('[migrate] Migrations applied successfully')
 }
 catch (err) {
-  logger.error('Migration failed:', err)
+  logger.error('[migrate] Migration failed:', err)
   process.exitCode = 1
 }

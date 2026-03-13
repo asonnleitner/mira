@@ -174,6 +174,6 @@ export async function runNoteTaker(
     logger.debug(`[note-taker] Completed for session ${ctx.sessionId}`)
   }
   catch (err) {
-    logger.error('Note-taker failed:', err)
+    logger.error('[note-taker] Note-taker failed:', err)
   }
 }

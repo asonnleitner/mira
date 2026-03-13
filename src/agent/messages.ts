@@ -50,7 +50,7 @@ export async function generateMessage(opts: {
     return response || getFallback(opts.purpose)
   }
   catch (err) {
-    logger.error('generateMessage failed:', err)
+    logger.error('[messages] generateMessage failed:', err)
     return getFallback(opts.purpose)
   }
 }

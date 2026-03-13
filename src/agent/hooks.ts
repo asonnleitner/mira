@@ -25,6 +25,8 @@ export function createFileSecurityHook(allowedBase: string, dataDir: string): Ho
 
 export const auditToolUse: HookCallback = async (input) => {
   const postInput = input as PostToolUseHookInput
+
   logger.info(`[audit] Tool: ${postInput.tool_name}`, postInput.tool_input)
+
   return {}
 }

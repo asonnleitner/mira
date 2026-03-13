@@ -32,7 +32,7 @@ export type InsertPatient = z.infer<typeof insertPatientSchema>
 export type InsertCheckInPreference = z.infer<typeof insertCheckInPreferenceSchema>
 
 // ---------------------------------------------------------------------------
-// SOAP note schema (shared between artifact-extractor and storage)
+// SOAP note schema (shared between note-taker and storage)
 // ---------------------------------------------------------------------------
 
 export const soapSchema = z.object({

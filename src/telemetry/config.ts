@@ -27,11 +27,11 @@ const headers = parseOtlpHeaders(config.OTEL_EXPORTER_OTLP_HEADERS)
 
 const spanProcessor = endpoint
   ? (() => {
-      logger.info(`OTLP trace exporter configured: ${endpoint}`)
+      logger.info(`[otel] OTLP trace exporter configured: ${endpoint}`)
       return new BatchSpanProcessor(new OTLPTraceExporter({ url: `${endpoint}/v1/traces`, headers }))
     })()
   : (() => {
-      logger.info('No OTLP endpoint configured, using console span exporter')
+      logger.info('[otel] No OTLP endpoint configured, using console span exporter')
       return new SimpleSpanProcessor(new ConsoleSpanExporter())
     })()
 

@@ -45,14 +45,14 @@ export function createBot(): Bot<BotContext> {
       return await prev(method, payload, signal)
     }
     catch (err) {
-      logger.error(`Telegram API call "${method}" failed:`, err)
+      logger.error(`[bot] Telegram API call "${method}" failed:`, err)
       throw err
     }
   })
 
   // Error handler
   bot.catch((err) => {
-    logger.error('Bot error:', err)
+    logger.error('[bot] Bot error:', err)
   })
 
   return bot
