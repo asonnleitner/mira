@@ -5,6 +5,7 @@ import { logger } from '~/telemetry/logger'
 import { handleCheckIn } from './handlers/commands'
 import { handleMessage } from './handlers/message'
 import { checkInMenu } from './menus/check-in'
+import { accessControlMiddleware } from './middleware/access-control'
 import { tracingMiddleware } from './middleware/tracing'
 import { sessionConfig } from './session'
 
@@ -17,6 +18,9 @@ export function createBot(): Bot<BotContext> {
   // Session middleware (PostgreSQL-backed)
   bot.use(session(sessionConfig))
 
+  // Access control — temporary: only allow existing patients
+  bot.use(accessControlMiddleware)
+
   // Menu middleware (must be before command registration)
   bot.use(checkInMenu)
 
@@ -28,6 +32,7 @@ export function createBot(): Bot<BotContext> {
     const chat = ctx.myChatMember.chat
     const newStatus = ctx.myChatMember.new_chat_member.status
     const oldStatus = ctx.myChatMember.old_chat_member.status
+
     logger.info(`[bot] Chat member status changed in ${chat.type} ${chat.id}: ${oldStatus} → ${newStatus}`)
   })
 

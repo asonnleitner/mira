@@ -11,6 +11,7 @@ export function createFileSecurityHook(allowedBase: string, dataDir: string): Ho
 
     if (!normalized.startsWith(allowedBase)) {
       logger.debug(`[hooks] File access denied: path="${filePath}" allowedBase="${allowedBase}"`)
+
       return {
         hookSpecificOutput: {
           hookEventName: 'PreToolUse' as const,
@@ -19,6 +20,7 @@ export function createFileSecurityHook(allowedBase: string, dataDir: string): Ho
         },
       }
     }
+
     return {}
   }
 }

@@ -21,10 +21,10 @@ export interface SessionContext {
   dataDir: string
 }
 
-export async function assembleSystemPrompt(
-  ctx: SessionContext,
-): Promise<string> {
-  return withSpan('agent.assembleSystemPrompt', { [ATTR_TELEGRAM_USER_ID]: ctx.telegramId }, async (span) => {
+export async function assembleSystemPrompt(ctx: SessionContext): Promise<string> {
+  return withSpan('agent.assembleSystemPrompt', {
+    [ATTR_TELEGRAM_USER_ID]: ctx.telegramId,
+  }, async (span) => {
     const promptCtx: PromptContext = {
       sessionType: ctx.sessionType,
       telegramId: ctx.telegramId,
@@ -38,6 +38,7 @@ export async function assembleSystemPrompt(
 
       if (relContent) {
         promptCtx.relationshipProfile = relContent
+
         logger.debug(`[context-assembler] Loaded relationship profile for chat ${ctx.chatId}`)
       }
       else {
@@ -50,6 +51,7 @@ export async function assembleSystemPrompt(
 
       if (profileContent) {
         promptCtx.patientProfile = profileContent
+
         logger.debug(`[context-assembler] Loaded patient profile for user ${ctx.telegramId}`)
       }
       else {

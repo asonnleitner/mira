@@ -18,8 +18,11 @@ export const checkInMenu = new Menu<BotContext>('check-in-menu')
       const chatMode = detectChatMode(ctx)
       const chat = await findOrCreateChat(telegramChatId, chatMode)
       const newEnabled = !ctx.session.checkInEnabled
+
       await updateCheckInPreference(chat.id, telegramId, { enabled: newEnabled })
+
       logger.debug(`[check-in-menu] Toggle: chatId=${telegramChatId} enabled=${newEnabled}`)
+
       ctx.session.checkInEnabled = newEnabled
       ctx.menu.update()
     },
@@ -62,8 +65,11 @@ async function setInterval_(ctx: BotContext, days: number) {
   const telegramId = ctx.from!.id
   const chatMode = detectChatMode(ctx)
   const chat = await findOrCreateChat(telegramChatId, chatMode)
+
   await updateCheckInPreference(chat.id, telegramId, { intervalDays: days })
+
   logger.debug(`[check-in-menu] Interval changed: chatId=${telegramChatId} days=${days}`)
+
   ctx.session.checkInIntervalDays = days
   ctx.menu.update()
 }
