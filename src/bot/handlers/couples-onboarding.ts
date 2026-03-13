@@ -1,14 +1,14 @@
 import type { BotContext } from '~/bot/context'
-import { join } from 'node:path'
+import { mkdir } from 'node:fs/promises'
 import { createSdkMcpServer, tool } from '@anthropic-ai/claude-agent-sdk'
 import { ATTR_GEN_AI_AGENT_NAME, ATTR_GEN_AI_CONVERSATION_ID, GEN_AI_OPERATION_NAME_VALUE_INVOKE_AGENT } from '@opentelemetry/semantic-conventions/incubating'
 import * as z from 'zod'
 import { tracedQuery } from '~/agent/query'
 import { isStaleSessionError } from '~/agent/therapist'
 import { sendMarkdownV2 } from '~/bot/utils/telegram-send'
-import { config } from '~/config'
 import { ANTHROPIC_MODEL_CLAUDE_SONNET, ATTR_TELEGRAM_CHAT_ID } from '~/constants'
 import { findPatientByTelegramId } from '~/db/queries/patients'
+import { couplesDir, relationshipProfilePath } from '~/paths'
 import { writeRelationshipProfile } from '~/storage/profile'
 import { logger } from '~/telemetry/logger'
 import { withSpan } from '~/telemetry/tracing'
@@ -81,6 +81,7 @@ function clearTimers(state: CouplesOnboardingSession): void {
     clearTimeout(state.reminderTimer)
     state.reminderTimer = undefined
   }
+
   if (state.deadlineTimer) {
     clearTimeout(state.deadlineTimer)
     state.deadlineTimer = undefined
@@ -111,7 +112,8 @@ function createCouplesOnboardingTools(chatId: number) {
         async (args) => {
           // Write RELATIONSHIP.md — best-effort, can be regenerated
           try {
-            const relationshipPath = join(config.DATA_DIR, 'couples', String(chatId), 'RELATIONSHIP.md')
+            const relationshipPath = relationshipProfilePath(chatId)
+
             await writeRelationshipProfile(relationshipPath, {
               chatId,
               partner1: args.partner1,
@@ -128,9 +130,11 @@ function createCouplesOnboardingTools(chatId: number) {
           logger.info(`[couples-onboarding] Completed onboarding for chat ${chatId} (${args.partner1} & ${args.partner2})`)
 
           const state = couplesOnboardingState.get(chatId)
+
           if (state) {
             clearTimers(state)
           }
+
           couplesOnboardingState.delete(chatId)
           resolveCompletion?.()
 
@@ -151,6 +155,7 @@ function createCouplesOnboardingTools(chatId: number) {
 
 async function resolvePartnerContext(state: CouplesOnboardingSession): Promise<string> {
   const names = [...state.partnerNames.values()]
+
   if (names.length === 0)
     return ''
 
@@ -164,6 +169,7 @@ async function runCouplesOnboardingAgent(
   sdkSessionId?: string,
 ): Promise<string> {
   const state = couplesOnboardingState.get(chatId)
+
   if (!state)
     return ''
 
@@ -172,6 +178,10 @@ async function runCouplesOnboardingAgent(
 
   const systemPrompt = COUPLES_ONBOARDING_SYSTEM_PROMPT + partnerContext
   const allowedTools = ['mcp__couples-onboarding-tools__complete_couples_onboarding']
+  const cwd = couplesDir(chatId)
+
+  // Ensure cwd exists before SDK subprocess starts
+  await mkdir(cwd, { recursive: true })
 
   const queryArgs = (resume?: string) => [
     {
@@ -187,7 +197,7 @@ async function runCouplesOnboardingAgent(
       options: {
         systemPrompt,
         model: ANTHROPIC_MODEL_CLAUDE_SONNET,
-        cwd: join(config.DATA_DIR, 'couples', String(chatId)),
+        cwd,
         mcpServers: { 'couples-onboarding-tools': server },
         allowedTools,
         tools: [] as string[],
@@ -208,14 +218,18 @@ async function runCouplesOnboardingAgent(
 
   let queryResult: Awaited<ReturnType<typeof tracedQuery>>
 
+  logger.debug(`[couples-onboarding] Running agent: chatId=${chatId} resume=${!!sdkSessionId} cwd=${cwd}`)
+
   try {
     queryResult = await tracedQuery(...queryArgs(sdkSessionId))
   }
   catch (err) {
     if (sdkSessionId && isStaleSessionError(err)) {
       logger.warn(`[couples-onboarding] Stale session ${sdkSessionId}, retrying without resume`)
+
       if (state)
         state.sdkSessionId = undefined
+
       queryResult = await tracedQuery(...queryArgs())
     }
     else {
@@ -223,25 +237,29 @@ async function runCouplesOnboardingAgent(
     }
   }
 
-  if (state) {
+  logger.debug(`[couples-onboarding] Agent completed: chatId=${chatId} responseLength=${queryResult.response.length}`)
+
+  if (state)
     state.sdkSessionId = queryResult.sessionId
-  }
 
   return queryResult.response
 }
 
 function setupTimers(ctx: BotContext, chatId: number): void {
   const state = couplesOnboardingState.get(chatId)
+
   if (!state)
     return
 
   clearTimers(state)
+
   state.lastResponseAt = Date.now()
   state.reminderSent = false
 
   // Reminder timer (5 minutes)
   state.reminderTimer = setTimeout(async () => {
     const currentState = couplesOnboardingState.get(chatId)
+
     if (!currentState || currentState.reminderSent)
       return
 
@@ -271,6 +289,7 @@ function setupTimers(ctx: BotContext, chatId: number): void {
   // Deadline timer (10 minutes)
   state.deadlineTimer = setTimeout(async () => {
     const currentState = couplesOnboardingState.get(chatId)
+
     if (!currentState)
       return
 
@@ -354,6 +373,7 @@ export async function handleCouplesOnboardingMessage(ctx: BotContext): Promise<v
     return
 
   const text = ctx.message?.text?.trim()
+
   if (!text)
     return
 
@@ -372,6 +392,7 @@ export async function handleCouplesOnboardingMessage(ctx: BotContext): Promise<v
     state.reminderSent = false
 
     const senderName = state.partnerNames.get(telegramId) ?? 'Partner'
+
     logger.debug(`[couples-onboarding] Received message from ${senderName} in chat ${chatId}`)
 
     // Show typing indicator

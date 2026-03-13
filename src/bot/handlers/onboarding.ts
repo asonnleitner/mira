@@ -1,16 +1,16 @@
 import type { BotContext } from '~/bot/context'
 import type { PatientProfile } from '~/db/schema/patients'
-import { join } from 'node:path'
+import { mkdir } from 'node:fs/promises'
 import { createSdkMcpServer, tool } from '@anthropic-ai/claude-agent-sdk'
 import { ATTR_GEN_AI_AGENT_NAME, ATTR_GEN_AI_CONVERSATION_ID, GEN_AI_OPERATION_NAME_VALUE_INVOKE_AGENT } from '@opentelemetry/semantic-conventions/incubating'
 import * as z from 'zod'
 import { tracedQuery } from '~/agent/query'
 import { isStaleSessionError } from '~/agent/therapist'
 import { replyMarkdownV2 } from '~/bot/utils/telegram-send'
-import { config } from '~/config'
 import { ANTHROPIC_MODEL_CLAUDE_SONNET, ATTR_TELEGRAM_USER_ID } from '~/constants'
 import { completeOnboarding, createPatient, findPatientByTelegramId } from '~/db/queries/patients'
 import { PatientProfileSchema } from '~/db/schema/patients'
+import { patientDir, patientProfilePath } from '~/paths'
 import { writeProfile } from '~/storage/profile'
 import { logger } from '~/telemetry/logger'
 import { withSpan } from '~/telemetry/tracing'
@@ -121,7 +121,7 @@ function createOnboardingTools(ctx: BotContext, telegramId: number) {
 
           // Write PROFILE.md — best-effort, note-taker regenerates if missing
           try {
-            const profilePath = join(config.DATA_DIR, 'patients', telegramId.toString(), 'PROFILE.md')
+            const profilePath = patientProfilePath(telegramId)
             await writeProfile(profilePath, telegramId, profile)
           }
           catch (err) {
@@ -158,6 +158,10 @@ async function runOnboardingAgent(ctx: BotContext, telegramId: number, userMessa
 
   const systemPrompt = ONBOARDING_SYSTEM_PROMPT + languageHint
   const allowedTools = ['mcp__onboarding-tools__complete_onboarding']
+  const cwd = patientDir(telegramId)
+
+  // Ensure cwd exists before SDK subprocess starts
+  await mkdir(cwd, { recursive: true })
 
   const queryArgs = (resume?: string) => [
     {
@@ -173,7 +177,7 @@ async function runOnboardingAgent(ctx: BotContext, telegramId: number, userMessa
       options: {
         systemPrompt,
         model: ANTHROPIC_MODEL_CLAUDE_SONNET,
-        cwd: join(config.DATA_DIR, 'patients', String(telegramId)),
+        cwd,
         mcpServers: { 'onboarding-tools': server },
         allowedTools,
         tools: [] as string[],
@@ -194,6 +198,8 @@ async function runOnboardingAgent(ctx: BotContext, telegramId: number, userMessa
 
   let result: Awaited<ReturnType<typeof tracedQuery>>
 
+  logger.debug(`[onboarding] Running agent: telegramId=${telegramId} resume=${!!sdkSessionId} cwd=${cwd}`)
+
   try {
     result = await tracedQuery(...queryArgs(sdkSessionId))
   }
@@ -209,6 +215,8 @@ async function runOnboardingAgent(ctx: BotContext, telegramId: number, userMessa
       throw err
     }
   }
+
+  logger.debug(`[onboarding] Agent completed: telegramId=${telegramId} responseLength=${result.response.length}`)
 
   // Update stored SDK session ID
   const state = onboardingState.get(telegramId)

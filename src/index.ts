@@ -1,6 +1,9 @@
 import { sdk } from '~/telemetry/config'
 /* eslint-disable perfectionist/sort-imports */
+import { mkdir } from 'node:fs/promises'
+import { join } from 'node:path'
 import process from 'node:process'
+import { config } from '~/config'
 import { logger } from '~/telemetry/logger'
 import { createBot } from './bot/bot'
 import { setBotReady, startHealthServer } from './health'
@@ -13,6 +16,10 @@ let checkInTimer: Timer | undefined
 // Start bot with long polling
 async function main() {
   try {
+    // Ensure base data directories exist before any agent calls
+    await mkdir(join(config.DATA_DIR, 'patients'), { recursive: true })
+    await mkdir(join(config.DATA_DIR, 'couples'), { recursive: true })
+
     healthServer = startHealthServer()
     logger.info(`Health server listening on port ${healthServer.port}`)
 

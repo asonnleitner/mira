@@ -18,7 +18,7 @@ const envSchema = z.object({
   CHECKIN_DEFAULT_DAYS: z.coerce.number().default(3),
   CHECKIN_WINDOW_START: z.coerce.number().default(9),
   CHECKIN_WINDOW_END: z.coerce.number().default(20),
-  CHECKIN_TIMEZONE: z.string().default('Europe/Vienna'),
+  CHECKIN_TIMEZONE: z.string().default('Europe/Prague'),
 })
 
 const parsed = envSchema.safeParse(process.env)

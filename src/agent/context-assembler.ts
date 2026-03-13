@@ -1,7 +1,7 @@
 import type { PromptContext } from '~/agent/system-prompt'
 import type { SessionType } from '~/db/schema'
 import { buildSystemPrompt } from '~/agent/system-prompt'
-import { ATTR_TELEGRAM_USER_ID } from '~/constants'
+import { ATTR_AGENT_ARTIFACT_COUNT, ATTR_AGENT_PROMPT_LENGTH, ATTR_TELEGRAM_USER_ID } from '~/constants'
 import { getArtifactsByPatient } from '~/db/queries/artifacts'
 import { readProfile } from '~/storage/profile'
 import { logger } from '~/telemetry/logger'
@@ -34,6 +34,7 @@ export async function assembleSystemPrompt(
     if (ctx.sessionType === 'couples') {
       // Only load relationship profile — individual profiles are private
       const relContent = await readProfile(ctx.profilePath)
+
       if (relContent) {
         promptCtx.relationshipProfile = relContent
         logger.debug(`[context-assembler] Loaded relationship profile for chat ${ctx.chatId}`)
@@ -45,6 +46,7 @@ export async function assembleSystemPrompt(
     else {
       // Load individual patient profile
       const profileContent = await readProfile(ctx.profilePath)
+
       if (profileContent) {
         promptCtx.patientProfile = profileContent
         logger.debug(`[context-assembler] Loaded patient profile for user ${ctx.telegramId}`)
@@ -56,7 +58,9 @@ export async function assembleSystemPrompt(
 
     // Load relevant artifacts (last 20, highest relevance)
     const artifacts = await getArtifactsByPatient(ctx.patientId)
-    span.setAttribute('agent.artifact_count', artifacts.length)
+
+    span.setAttribute(ATTR_AGENT_ARTIFACT_COUNT, artifacts.length)
+
     logger.debug(`[context-assembler] Loaded ${artifacts.length} artifacts for patient ${ctx.patientId}`)
 
     if (artifacts.length > 0) {
@@ -76,7 +80,8 @@ export async function assembleSystemPrompt(
     }
 
     const prompt = buildSystemPrompt(promptCtx)
-    span.setAttribute('agent.prompt_length', prompt.length)
+
+    span.setAttribute(ATTR_AGENT_PROMPT_LENGTH, prompt.length)
 
     return prompt
   })

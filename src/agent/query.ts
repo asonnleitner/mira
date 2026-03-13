@@ -57,11 +57,14 @@ export async function tracedQuery(
 
     for await (const message of q) {
       messageCount++
+
       if (message.type === 'system' && message.subtype === 'init') {
         if (ownServers.size > 0) {
           const failed = message.mcp_servers.filter(s => s.status !== 'connected' && ownServers.has(s.name))
+
           for (const server of failed) {
             logger.error(`[${label}] MCP server failed to connect: ${server.name} (${server.status})`)
+
             span.addEvent('mcp.server.connection_error', {
               [ATTR_SERVER_ADDRESS]: server.name,
               [ATTR_ERROR_TYPE]: server.status,
@@ -79,16 +82,19 @@ export async function tracedQuery(
       }
       else if (isResultError(message)) {
         logger.error(`[${label}] SDK error result:`, message)
+
         span.setStatus({ code: SpanStatusCode.ERROR, message: message.errors.join('; ') })
         span.recordException(new Error(message.errors.join('; ')))
         span.addEvent('sdk.error_result', {
           'sdk.error.subtype': message.subtype,
           'sdk.error.messages': JSON.stringify(message.errors),
         })
+
         callbacks?.onError?.(message)
       }
       else if (message.type === 'rate_limit_event') {
         const { status, rateLimitType, utilization } = message.rate_limit_info
+
         if (status !== 'allowed') {
           logger.warn(`[${label}] Rate limit ${status}`, { rateLimitType, utilization })
           span.addEvent('gen_ai.rate_limit', {
@@ -100,6 +106,7 @@ export async function tracedQuery(
       }
       else if (message.type === 'assistant' && message.error) {
         logger.warn(`[${label}] Assistant message error: ${message.error}`)
+
         span.addEvent('gen_ai.assistant_error', {
           [ATTR_ERROR_TYPE]: message.error,
         })
@@ -111,10 +118,12 @@ export async function tracedQuery(
 
     if (!result.resultMessage) {
       logger.warn(`[${label}] Agent query completed without a result message (${messageCount} messages received)`)
+
       span.addEvent('sdk.no_result', { 'sdk.message_count': messageCount })
     }
 
     const msg = result.resultMessage
+
     setGenAiResult(span, {
       outputMessages: [{ role: 'assistant', content: result.response || JSON.stringify(result.structuredOutput) }],
       inputTokens: msg?.usage.input_tokens,
@@ -125,9 +134,8 @@ export async function tracedQuery(
       responseModel: model,
     })
 
-    if (result.resultMessage) {
+    if (result.resultMessage)
       callbacks?.onSuccess?.(result, span)
-    }
 
     return result
   })

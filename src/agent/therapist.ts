@@ -1,7 +1,6 @@
 import type { SDKResultError } from '@anthropic-ai/claude-agent-sdk'
 import type { SessionContext } from '~/agent/context-assembler'
 import type { ToolContext } from '~/agent/tools'
-import { resolve } from 'node:path'
 import { ATTR_GEN_AI_AGENT_NAME, ATTR_GEN_AI_CONVERSATION_ID, GEN_AI_OPERATION_NAME_VALUE_INVOKE_AGENT } from '@opentelemetry/semantic-conventions/incubating'
 import { assembleSystemPrompt } from '~/agent/context-assembler'
 import { auditToolUse, createFileSecurityHook } from '~/agent/hooks'
@@ -9,12 +8,11 @@ import { createMcpTracingHooks } from '~/agent/mcp-tracing'
 import { tracedQuery } from '~/agent/query'
 import { createTherapyTools } from '~/agent/tools'
 import { ANTHROPIC_MODEL_CLAUDE_SONNET, ATTR_BOT_PATIENT_ID, ATTR_BOT_SESSION_ID, ATTR_TELEGRAM_USER_ID } from '~/constants'
+import { sessionDataDir } from '~/paths'
 import { logger } from '~/telemetry/logger'
 
 function createTherapistHooks(dataDir: string, sessionCtx: SessionContext) {
-  const allowedBase = sessionCtx.sessionType === 'individual'
-    ? resolve(dataDir, 'patients', String(sessionCtx.telegramId))
-    : resolve(dataDir, 'couples', String(sessionCtx.chatId))
+  const allowedBase = sessionDataDir(sessionCtx.sessionType, sessionCtx.telegramId, sessionCtx.chatId)
 
   const mcpTracing = createMcpTracingHooks()
 
@@ -43,7 +41,9 @@ export class StaleSessionError extends Error {
 export function isStaleSessionError(err: unknown): boolean {
   if (err instanceof StaleSessionError)
     return true
+
   const msg = err instanceof Error ? err.message : String(err)
+
   return msg.includes('No conversation found') || msg.includes('process exited with code 1')
 }
 
@@ -83,7 +83,7 @@ export async function startTherapySession(
       label: 'therapist',
       attributes: {
         [ATTR_GEN_AI_AGENT_NAME]: 'therapist',
-        'bot.session_id': sessionCtx.sessionId,
+        [ATTR_BOT_SESSION_ID]: sessionCtx.sessionId,
         [ATTR_BOT_PATIENT_ID]: sessionCtx.patientId,
         [ATTR_TELEGRAM_USER_ID]: sessionCtx.telegramId,
       },

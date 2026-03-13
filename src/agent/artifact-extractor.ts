@@ -1,5 +1,4 @@
 import type { SessionContext } from '~/agent/context-assembler'
-import { resolve } from 'node:path'
 import { createSdkMcpServer, tool } from '@anthropic-ai/claude-agent-sdk'
 import { ATTR_GEN_AI_AGENT_NAME, GEN_AI_OPERATION_NAME_VALUE_INVOKE_AGENT } from '@opentelemetry/semantic-conventions/incubating'
 import * as z from 'zod'
@@ -9,6 +8,7 @@ import { tracedQuery } from '~/agent/query'
 import { ANTHROPIC_MODEL_CLAUDE_SONNET, ATTR_BOT_SESSION_ID } from '~/constants'
 import { saveArtifact } from '~/db/queries/artifacts'
 import { artifactTypeValues } from '~/db/schema'
+import { sessionDataDir } from '~/paths'
 import { logger } from '~/telemetry/logger'
 
 const NOTE_TAKER_SYSTEM_PROMPT = `You are a clinical documentation assistant reviewing a therapy exchange between Mira (therapist) and a patient.
@@ -65,7 +65,9 @@ function createNoteTakerTools(ctx: SessionContext) {
             verbatimQuote: args.verbatimQuote,
             clinicalRelevance: args.clinicalRelevance,
           })
+
           logger.debug(`[note-taker] Saved artifact: type=${args.type} relevance=${args.clinicalRelevance}`)
+
           return {
             content: [{ type: 'text' as const, text: `Artifact saved: ${args.type}` }],
           }
@@ -77,9 +79,7 @@ function createNoteTakerTools(ctx: SessionContext) {
 }
 
 function createNoteTakerHooks(dataDir: string, ctx: SessionContext) {
-  const allowedBase = ctx.sessionType === 'individual'
-    ? resolve(dataDir, 'patients', String(ctx.telegramId))
-    : resolve(dataDir, 'couples', String(ctx.chatId))
+  const allowedBase = sessionDataDir(ctx.sessionType, ctx.telegramId, ctx.chatId)
 
   const mcpTracing = createMcpTracingHooks()
 
@@ -153,6 +153,9 @@ export async function runNoteTaker(
           mcpServers: { 'note-taker-tools': mcpTools },
           allowedTools: [
             'mcp__note-taker-tools__save_artifact',
+            'Glob',
+            'Grep',
+            'Edit',
             'Read',
             'Write',
           ],

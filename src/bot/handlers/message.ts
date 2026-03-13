@@ -2,7 +2,6 @@ import type { SpanContext } from '@opentelemetry/api'
 import type { SessionContext } from '~/agent/context-assembler'
 import type { BotContext } from '~/bot/context'
 import type { SessionType } from '~/db/schema'
-import { join } from 'node:path'
 import { runNoteTaker } from '~/agent/artifact-extractor'
 import { continueTherapySession, isStaleSessionError, startTherapySession } from '~/agent/therapist'
 import { handleCouplesOnboardingMessage, isCouplesOnboarding, startCouplesOnboarding } from '~/bot/handlers/couples-onboarding'
@@ -14,6 +13,7 @@ import { ATTR_BOT_CHAT_MODE, ATTR_BOT_MESSAGE_COUNT, ATTR_TELEGRAM_CHAT_ID } fro
 import { resetUnansweredCount } from '~/db/queries/check-in'
 import { createPatient, findPatientByTelegramId } from '~/db/queries/patients'
 import { createSession, findActiveSession, saveMessage, updateSessionLastMessage, updateSessionSdkId } from '~/db/queries/sessions'
+import { patientProfilePath, relationshipProfilePath, sessionTranscriptPath } from '~/paths'
 import { appendMessage, createTranscript } from '~/storage/transcript'
 import { logger } from '~/telemetry/logger'
 import { captureSpanContext, withLinkedSpan } from '~/telemetry/tracing'
@@ -44,12 +44,14 @@ export async function handleMessage(ctx: BotContext): Promise<void> {
     return
 
   const chatType = ctx.chat?.type
+
   logger.debug(`[message] Incoming: telegramId=${telegramId} chatId=${chatId} chatType=${chatType}`)
 
   // In groups, only respond when the bot is explicitly mentioned or replied to
   if (chatType === 'group' || chatType === 'supergroup') {
     const botMentioned = ctx.message?.text?.includes(`@${ctx.me.username}`)
     const isReplyToBot = ctx.message?.reply_to_message?.from?.id === ctx.me.id
+
     if (!botMentioned && !isReplyToBot) {
       logger.debug(`[message] Ignoring group message in chat ${chatId} (not mentioned/replied)`)
       return
@@ -89,7 +91,7 @@ export async function handleMessage(ctx: BotContext): Promise<void> {
       return
     }
 
-    const relationshipPath = join(config.DATA_DIR, 'couples', String(chatId), 'RELATIONSHIP.md')
+    const relationshipPath = relationshipProfilePath(chatId)
     const relationshipExists = await Bun.file(relationshipPath).exists()
 
     if (!relationshipExists) {
@@ -173,8 +175,8 @@ function bufferMessage(ctx: BotContext, chatId: number, chatMode: SessionType, m
 
       logger.error(`[message] Error processing therapy message for chat ${chatId}:`, err)
       // Notify user that something went wrong
-      ctx.api.sendMessage(chatId, 'Sorry, something went wrong. Please try again.')
-        .catch(() => {})
+      ctx.api.sendMessage(chatId, 'Sorry, something went wrong. Please try again.').catch(() => {})
+
       chatBuffer.delete(chatId)
     }
   })()
@@ -202,18 +204,12 @@ async function processTherapyMessage(
     const telegramId = ctx.from!.id
 
     if (!session) {
-      const transcriptDir = chatMode === 'individual'
-        ? join('patients', String(telegramId))
-        : join('couples', String(chatId))
-
       const sessionCount = Date.now() // Simple unique ID for path
 
-      const transcriptPath = join(
-        config.DATA_DIR,
-        transcriptDir,
-        'sessions',
-        String(sessionCount),
-        'transcript.md',
+      const transcriptPath = sessionTranscriptPath(
+        chatMode,
+        chatMode === 'individual' ? telegramId : chatId,
+        sessionCount,
       )
 
       session = await createSession({
@@ -275,8 +271,8 @@ async function processTherapyMessage(
 
     // Build session context
     const profilePath = chatMode === 'individual'
-      ? join(config.DATA_DIR, 'patients', String(telegramId), 'PROFILE.md')
-      : join(config.DATA_DIR, 'couples', String(chatId), 'RELATIONSHIP.md')
+      ? patientProfilePath(telegramId)
+      : relationshipProfilePath(chatId)
 
     // Resolve preferred language from patient record
     const patient = await findPatientByTelegramId(telegramId)
@@ -335,12 +331,12 @@ async function processTherapyMessage(
       throw new DOMException('Aborted', 'AbortError')
 
     // Warn if agent returned an empty response
-    if (!response) {
+    if (!response)
       logger.warn(`[message] Empty response from agent for chat ${chatId}`)
-    }
 
     // Send response to Telegram
     logger.info(`[message] Sending response to chat ${chatId} (${response.length} chars)`)
+
     await sendMarkdownV2({ chatId, text: response, api: ctx.api })
 
     // Append therapist response to transcript and DB
@@ -362,6 +358,7 @@ async function processTherapyMessage(
 
     // Run note-taker async (don't block user)
     logger.debug(`[message] Note-taker dispatched for session ${session.id}`)
+
     runNoteTaker(sessionCtx, combinedMessage, response).catch(err =>
       logger.error('Note-taker error:', err),
     )
