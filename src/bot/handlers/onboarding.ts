@@ -233,22 +233,38 @@ export async function startOnboarding(ctx: BotContext): Promise<void> {
 
     ctx.session.patientId = patient.id
 
-    // Reset onboarding state (handles /start mid-onboarding)
-    onboardingState.set(telegramId, {})
-    onboardingBuffer.delete(telegramId)
+    // Reset onboarding state (handles restart mid-onboarding)
+    const state: OnboardingSession = {}
+    onboardingState.set(telegramId, state)
+    // Acquire buffer lock before initial agent call to prevent concurrent calls
+    onboardingBuffer.set(telegramId, { messages: [], processing: true, ctx })
 
-    const response = await runOnboardingAgent(
-      ctx,
-      telegramId,
-      'The user just started the bot. Greet them and begin onboarding.',
-    )
+    try {
+      const response = await runOnboardingAgent(
+        ctx,
+        telegramId,
+        'The user just started the bot. Greet them and begin onboarding.',
+      )
 
-    if (response) {
-      await replyMarkdownV2(ctx, response)
+      if (response) {
+        await replyMarkdownV2(ctx, response)
+      }
+      else {
+        logger.error(`[onboarding] Empty response from onboarding agent for user ${telegramId}`)
+        await ctx.reply('I\'m having trouble starting up. Please try again in a moment.')
+      }
+    }
+    catch (err) {
+      logger.error(`[onboarding] Error during initial onboarding for user ${telegramId}:`, err)
+      await ctx.reply('I\'m having trouble starting up. Please try again in a moment.')
+    }
+
+    // Drain any messages that arrived during the initial agent call
+    if (onboardingState.has(telegramId)) {
+      await drainOnboardingBuffer(telegramId, state)
     }
     else {
-      logger.error(`[onboarding] Empty response from onboarding agent for user ${telegramId}`)
-      await ctx.reply('I\'m having trouble starting up. Please try /start again in a moment.')
+      onboardingBuffer.delete(telegramId)
     }
   })
 }

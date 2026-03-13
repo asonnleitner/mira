@@ -44,7 +44,6 @@ export async function findSessionsDueForCheckIn() {
       )
       .where(
         and(
-          eq(tables.therapySessions.status, 'active'),
           eq(tables.checkInPreferences.enabled, true),
           lt(tables.checkInPreferences.unansweredCount, 3),
         ),

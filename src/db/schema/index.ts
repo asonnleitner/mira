@@ -1,13 +1,13 @@
 import type { ArtifactType } from './artifacts'
-import type { SessionStatus, SessionType } from './sessions'
+import type { SessionType } from './sessions'
 import { artifactTypeValues, clinicalArtifacts } from './artifacts'
 import { checkInPreferences } from './check-in-preferences'
 import { grammySessions } from './grammy-sessions'
 import { sessionMessages } from './messages'
 import { patients } from './patients'
-import { sessionStatusValues, sessionTypeValues, therapySessions } from './sessions'
+import { sessionTypeValues, therapySessions } from './sessions'
 
-export type { ArtifactType, SessionStatus, SessionType }
+export type { ArtifactType, SessionType }
 
 export {
   artifactTypeValues,
@@ -16,7 +16,6 @@ export {
   grammySessions,
   patients,
   sessionMessages,
-  sessionStatusValues,
   sessionTypeValues,
   therapySessions,
 }

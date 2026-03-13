@@ -1,6 +1,6 @@
-import type { SessionStatus, SessionType } from '~/db/schema'
+import type { SessionType } from '~/db/schema'
 import type { InsertMessage } from '~/db/zod'
-import { and, count, desc, eq } from 'drizzle-orm'
+import { count, desc, eq } from 'drizzle-orm'
 import { db, tables } from '~/db'
 import { logger } from '~/telemetry/logger'
 import { withDbSpan } from '~/telemetry/tracing'
@@ -9,12 +9,7 @@ export async function findActiveSession(chatId: number) {
   const rows = await withDbSpan(
     db.select()
       .from(tables.therapySessions)
-      .where(
-        and(
-          eq(tables.therapySessions.chatId, chatId),
-          eq(tables.therapySessions.status, 'active'),
-        ),
-      )
+      .where(eq(tables.therapySessions.chatId, chatId))
       .orderBy(desc(tables.therapySessions.startedAt))
       .limit(1),
   )
@@ -66,33 +61,9 @@ export async function updateSessionLastMessage(sessionId: number) {
   )
 }
 
-export async function updateSessionStatus(
-  sessionId: number,
-  status: SessionStatus,
-) {
-  logger.debug(`[db:sessions] updateSessionStatus sessionId=${sessionId} status=${status}`)
-  const [updated] = await withDbSpan(
-    db.update(tables.therapySessions)
-      .set({ status })
-      .where(eq(tables.therapySessions.id, sessionId))
-      .returning(),
-  )
-
-  return updated
-}
-
 export async function saveMessage(data: Pick<InsertMessage, 'sessionId' | 'patientId' | 'role' | 'content'>) {
   const [msg] = await withDbSpan(
     db.insert(tables.sessionMessages).values(data).returning(),
   )
   return msg
-}
-
-export async function getSessionCount(chatId: number) {
-  return withDbSpan(
-    db.select()
-      .from(tables.therapySessions)
-      .where(eq(tables.therapySessions.chatId, chatId))
-      .orderBy(desc(tables.therapySessions.startedAt)),
-  )
 }

@@ -2,7 +2,7 @@ import type { BotContext } from './context'
 import { Bot, session } from 'grammy'
 import { config } from '~/config'
 import { logger } from '~/telemetry/logger'
-import { handleCheckIn, handleHistory, handlePause, handleResume, handleStart, handleStatus } from './handlers/commands'
+import { handleCheckIn } from './handlers/commands'
 import { handleMessage } from './handlers/message'
 import { checkInMenu } from './menus/check-in'
 import { tracingMiddleware } from './middleware/tracing'
@@ -21,11 +21,6 @@ export function createBot(): Bot<BotContext> {
   bot.use(checkInMenu)
 
   // Commands
-  bot.command('start', handleStart)
-  bot.command('status', handleStatus)
-  bot.command('pause', handlePause)
-  bot.command('resume', handleResume)
-  bot.command('history', handleHistory)
   bot.command('checkin', handleCheckIn)
 
   // Log when bot is added to or removed from groups

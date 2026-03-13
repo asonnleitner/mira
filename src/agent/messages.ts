@@ -57,12 +57,6 @@ export async function generateMessage(opts: {
 
 function getFallback(purpose: string): string {
   const fallbacks: Record<string, string> = {
-    welcome_back: 'Welcome back! I\'m here for you.',
-    session_paused: 'Session paused. Use /resume when you\'re ready.',
-    session_resumed: 'Session resumed. I\'m here whenever you\'re ready.',
-    no_active_session: 'No active session. Send a message to start one.',
-    no_paused_session: 'No paused session found. Send a message to start a new one.',
-    no_history: 'No session history yet.',
     check_in: 'Hi\\! It\'s been a little while since we last talked\\. I\'m here whenever you\'d like to chat\\.',
     check_in_couples: 'Hi both\\! It\'s been a little while since our last session\\. I\'m here whenever you\'d like to continue\\.',
   }

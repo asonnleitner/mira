@@ -330,21 +330,36 @@ export async function startCouplesOnboarding(ctx: BotContext): Promise<void> {
     }
 
     couplesOnboardingState.set(chatId, state)
-    couplesOnboardingBuffer.delete(chatId)
+    // Acquire buffer lock before initial agent call to prevent concurrent calls
+    couplesOnboardingBuffer.set(chatId, { messages: [], processing: true, ctx })
 
-    const response = await runCouplesOnboardingAgent(
-      ctx,
-      chatId,
-      `[${senderName}]: ${ctx.message?.text ?? 'Hello'}`,
-    )
+    try {
+      const response = await runCouplesOnboardingAgent(
+        ctx,
+        chatId,
+        `[${senderName}]: ${ctx.message?.text ?? 'Hello'}`,
+      )
 
-    if (response) {
-      await sendMarkdownV2({ chatId, text: response, api: ctx.api })
-      setupTimers(ctx, chatId)
+      if (response) {
+        await sendMarkdownV2({ chatId, text: response, api: ctx.api })
+        setupTimers(ctx, chatId)
+      }
+      else {
+        logger.error(`[couples-onboarding] Empty response from onboarding agent for chat ${chatId}`)
+        await ctx.reply('I\'m having trouble starting up. Please try again in a moment.')
+      }
+    }
+    catch (err) {
+      logger.error(`[couples-onboarding] Error during initial onboarding for chat ${chatId}:`, err)
+      await ctx.reply('I\'m having trouble starting up. Please try again in a moment.')
+    }
+
+    // Drain any messages that arrived during the initial agent call
+    if (couplesOnboardingState.has(chatId)) {
+      await drainCouplesOnboardingBuffer(chatId, state)
     }
     else {
-      logger.error(`[couples-onboarding] Empty response from onboarding agent for chat ${chatId}`)
-      await ctx.reply('I\'m having trouble starting up. Please try again in a moment.')
+      couplesOnboardingBuffer.delete(chatId)
     }
   })
 }
