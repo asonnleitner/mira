@@ -43,12 +43,15 @@ export async function handleMessage(ctx: BotContext): Promise<void> {
   if (!text)
     return
 
-  // In groups, only respond when the bot is explicitly mentioned or replied to
   const chatType = ctx.chat?.type
+  logger.debug(`[message] Incoming: telegramId=${telegramId} chatId=${chatId} chatType=${chatType}`)
+
+  // In groups, only respond when the bot is explicitly mentioned or replied to
   if (chatType === 'group' || chatType === 'supergroup') {
     const botMentioned = ctx.message?.text?.includes(`@${ctx.me.username}`)
     const isReplyToBot = ctx.message?.reply_to_message?.from?.id === ctx.me.id
     if (!botMentioned && !isReplyToBot) {
+      logger.debug(`[message] Ignoring group message in chat ${chatId} (not mentioned/replied)`)
       return
     }
   }
@@ -115,6 +118,7 @@ function bufferMessage(ctx: BotContext, chatId: number, chatMode: SessionType, m
   if (existing) {
     // Abort in-flight request if one is running
     if (existing.abortController) {
+      logger.debug(`[message] Aborting in-flight request for chat ${chatId}, buffering new message`)
       existing.abortController.abort()
       existing.abortController = undefined
     }
@@ -231,6 +235,8 @@ async function processTherapyMessage(
 
     ctx.session.activeSessionId = session.id
 
+    logger.debug(`[message] Session resolved: chatId=${chatId} sessionId=${session.id} isNew=${!session.sdkSessionId}`)
+
     // Compose patient message (batch for couples)
     let combinedMessage: string
 
@@ -264,6 +270,8 @@ async function processTherapyMessage(
     // Check abort before calling Claude (messages already saved)
     if (signal.aborted)
       throw new DOMException('Aborted', 'AbortError')
+
+    logger.debug(`[message] Calling Claude: chatId=${chatId} sessionId=${session.id} mode=${chatMode} resume=${!!session.sdkSessionId}`)
 
     // Build session context
     const profilePath = chatMode === 'individual'
@@ -353,6 +361,7 @@ async function processTherapyMessage(
     await updateSessionLastMessage(session.id)
 
     // Run note-taker async (don't block user)
+    logger.debug(`[message] Note-taker dispatched for session ${session.id}`)
     runNoteTaker(sessionCtx, combinedMessage, response).catch(err =>
       logger.error('Note-taker error:', err),
     )

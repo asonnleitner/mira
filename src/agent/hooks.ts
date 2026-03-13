@@ -10,6 +10,7 @@ export function createFileSecurityHook(allowedBase: string, dataDir: string): Ho
     const normalized = resolve(dataDir, filePath)
 
     if (!normalized.startsWith(allowedBase)) {
+      logger.debug(`[hooks] File access denied: path="${filePath}" allowedBase="${allowedBase}"`)
       return {
         hookSpecificOutput: {
           hookEventName: 'PreToolUse' as const,

@@ -1,6 +1,7 @@
 import type { BotContext } from '~/bot/context'
 import { Menu } from '@grammyjs/menu'
 import { updateCheckInPreference } from '~/db/queries/check-in'
+import { logger } from '~/telemetry/logger'
 
 export const checkInMenu = new Menu<BotContext>('check-in-menu')
   // Row 1: Enable/disable toggle
@@ -14,6 +15,7 @@ export const checkInMenu = new Menu<BotContext>('check-in-menu')
       const telegramId = ctx.from!.id
       const newEnabled = !ctx.session.checkInEnabled
       await updateCheckInPreference(chatId, telegramId, { enabled: newEnabled })
+      logger.debug(`[check-in-menu] Toggle: chatId=${chatId} enabled=${newEnabled}`)
       ctx.session.checkInEnabled = newEnabled
       ctx.menu.update()
     },
@@ -55,6 +57,7 @@ async function setInterval_(ctx: BotContext, days: number) {
   const chatId = ctx.chat!.id
   const telegramId = ctx.from!.id
   await updateCheckInPreference(chatId, telegramId, { intervalDays: days })
+  logger.debug(`[check-in-menu] Interval changed: chatId=${chatId} days=${days}`)
   ctx.session.checkInIntervalDays = days
   ctx.menu.update()
 }

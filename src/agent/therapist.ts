@@ -61,6 +61,8 @@ export async function startTherapySession(
   patientMessage: string,
   abortController?: AbortController,
 ): Promise<{ response: string, sdkSessionId: string }> {
+  logger.debug(`[therapist] Starting new session: sessionId=${sessionCtx.sessionId} patientId=${sessionCtx.patientId} type=${sessionCtx.sessionType}`)
+
   const toolCtx: ToolContext = {
     sessionId: sessionCtx.sessionId,
     patientId: sessionCtx.patientId,
@@ -70,6 +72,9 @@ export async function startTherapySession(
 
   const tools = createTherapyTools(toolCtx)
   const systemPrompt = await assembleSystemPrompt(sessionCtx)
+
+  logger.debug(`[therapist] System prompt assembled: ${systemPrompt.length} chars`)
+
   const hooks = createTherapistHooks(sessionCtx.dataDir, sessionCtx)
 
   const { response, sessionId } = await tracedQuery(
@@ -108,6 +113,8 @@ export async function startTherapySession(
     },
   )
 
+  logger.debug(`[therapist] New session completed: sdkSessionId=${sessionId} responseLength=${response.length}`)
+
   return { response, sdkSessionId: sessionId }
 }
 
@@ -117,6 +124,8 @@ export async function continueTherapySession(
   sdkSessionId: string,
   abortController?: AbortController,
 ): Promise<string> {
+  logger.debug(`[therapist] Continuing session: sessionId=${sessionCtx.sessionId} sdkSessionId=${sdkSessionId}`)
+
   const toolCtx: ToolContext = {
     sessionId: sessionCtx.sessionId,
     patientId: sessionCtx.patientId,

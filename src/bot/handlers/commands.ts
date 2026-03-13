@@ -16,6 +16,7 @@ function getLanguage(ctx: BotContext, patient?: { preferredLanguage?: string | n
 export async function handleStart(ctx: BotContext): Promise<void> {
   await withSpan('bot.command.start', { [ATTR_BOT_COMMAND]: 'start' }, async () => {
     const telegramId = ctx.from!.id
+    logger.debug(`[commands] /start from telegramId=${telegramId}`)
     const patient = await findPatientByTelegramId(telegramId)
 
     if (!patient || !patient.onboardingComplete) {
@@ -39,6 +40,7 @@ export async function handleStart(ctx: BotContext): Promise<void> {
 export async function handleStatus(ctx: BotContext): Promise<void> {
   await withSpan('bot.command.status', { [ATTR_BOT_COMMAND]: 'status' }, async () => {
     const chatId = ctx.chat!.id
+    logger.debug(`[commands] /status from chatId=${chatId}`)
     const patient = await findPatientByTelegramId(ctx.from!.id)
     const session = await findActiveSession(chatId)
 
@@ -74,6 +76,7 @@ export async function handleStatus(ctx: BotContext): Promise<void> {
 export async function handlePause(ctx: BotContext): Promise<void> {
   await withSpan('bot.command.pause', { [ATTR_BOT_COMMAND]: 'pause' }, async () => {
     const chatId = ctx.chat!.id
+    logger.debug(`[commands] /pause from chatId=${chatId}`)
     const patient = await findPatientByTelegramId(ctx.from!.id)
     const session = await findActiveSession(chatId)
 
@@ -101,6 +104,7 @@ export async function handlePause(ctx: BotContext): Promise<void> {
 export async function handleResume(ctx: BotContext): Promise<void> {
   await withSpan('bot.command.resume', { [ATTR_BOT_COMMAND]: 'resume' }, async () => {
     const chatId = ctx.chat!.id
+    logger.debug(`[commands] /resume from chatId=${chatId}`)
     const patient = await findPatientByTelegramId(ctx.from!.id)
     const sessions = await getSessionCount(chatId)
     const paused = sessions.find(s => s.status === 'paused')
@@ -129,6 +133,7 @@ export async function handleResume(ctx: BotContext): Promise<void> {
 export async function handleHistory(ctx: BotContext): Promise<void> {
   await withSpan('bot.command.history', { [ATTR_BOT_COMMAND]: 'history' }, async () => {
     const chatId = ctx.chat!.id
+    logger.debug(`[commands] /history from chatId=${chatId}`)
     const patient = await findPatientByTelegramId(ctx.from!.id)
     const sessions = await getSessionCount(chatId)
 
@@ -169,6 +174,7 @@ export async function handleHistory(ctx: BotContext): Promise<void> {
 export async function handleCheckIn(ctx: BotContext): Promise<void> {
   await withSpan('bot.command.checkin', { [ATTR_BOT_COMMAND]: 'checkin' }, async () => {
     const chatId = ctx.chat!.id
+    logger.debug(`[commands] /checkin from chatId=${chatId}`)
     const pref = await findOrCreatePreference(chatId)
 
     ctx.session.checkInEnabled = pref.enabled

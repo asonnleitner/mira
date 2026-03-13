@@ -1,6 +1,7 @@
 import type { InsertArtifact } from '~/db/zod'
 import { and, desc, eq, sql } from 'drizzle-orm'
 import { db, tables } from '~/db'
+import { logger } from '~/telemetry/logger'
 import { withDbSpan } from '~/telemetry/tracing'
 
 export async function saveArtifact(data: Pick<InsertArtifact, 'sessionId' | 'patientId' | 'type' | 'content' | 'verbatimQuote' | 'clinicalRelevance'>) {
@@ -9,6 +10,9 @@ export async function saveArtifact(data: Pick<InsertArtifact, 'sessionId' | 'pat
       .values(data)
       .returning(),
   )
+
+  logger.debug(`[db:artifacts] saveArtifact sessionId=${data.sessionId} type=${data.type} relevance=${data.clinicalRelevance}`)
+
   return artifact
 }
 
@@ -31,7 +35,7 @@ export async function getArtifactsBySession(sessionId: number) {
 }
 
 export async function searchArtifacts(patientId: number, keyword: string) {
-  return withDbSpan(
+  const results = await withDbSpan(
     db.select()
       .from(tables.clinicalArtifacts)
       .where(
@@ -42,4 +46,8 @@ export async function searchArtifacts(patientId: number, keyword: string) {
       )
       .orderBy(desc(tables.clinicalArtifacts.clinicalRelevance)),
   )
+
+  logger.debug(`[db:artifacts] searchArtifacts patientId=${patientId} keyword="${keyword}" results=${results.length}`)
+
+  return results
 }

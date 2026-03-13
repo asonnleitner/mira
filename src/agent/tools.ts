@@ -3,6 +3,7 @@ import * as z from 'zod'
 import { saveArtifact, searchArtifacts } from '~/db/queries/artifacts'
 import { artifactTypeValues } from '~/db/schema'
 import { readTranscript } from '~/storage/transcript'
+import { logger } from '~/telemetry/logger'
 
 export interface ToolContext {
   sessionId: number
@@ -44,6 +45,7 @@ export function createTherapyTools(ctx: ToolContext) {
             verbatimQuote: args.verbatimQuote,
             clinicalRelevance: args.clinicalRelevance ?? 5,
           })
+          logger.debug(`[tools] save_session_note: type=${args.type} sessionId=${ctx.sessionId}`)
           return {
             content: [
               { type: 'text' as const, text: `Note saved: ${args.type}` },
@@ -76,6 +78,7 @@ export function createTherapyTools(ctx: ToolContext) {
             content: `${args.title}: ${args.description}${args.frequency ? ` (${args.frequency})` : ''}`,
             clinicalRelevance: 7,
           })
+          logger.debug(`[tools] log_exercise: title="${args.title}" sessionId=${ctx.sessionId}`)
           return {
             content: [
               {
@@ -104,6 +107,7 @@ export function createTherapyTools(ctx: ToolContext) {
             ctx.patientId,
             args.keyword,
           )
+          logger.debug(`[tools] search_history: keyword="${args.keyword}" artifactMatches=${artifacts.length}`)
           if (artifacts.length > 0) {
             results.push('## Matching Artifacts')
             for (const a of artifacts.slice(0, 10)) {

@@ -1,5 +1,7 @@
+import { OTLPLogExporter } from '@opentelemetry/exporter-logs-otlp-proto'
 import { OTLPTraceExporter } from '@opentelemetry/exporter-trace-otlp-proto'
 import { resourceFromAttributes } from '@opentelemetry/resources'
+import { BatchLogRecordProcessor } from '@opentelemetry/sdk-logs'
 import { NodeSDK } from '@opentelemetry/sdk-node'
 import { BatchSpanProcessor, ConsoleSpanExporter, SimpleSpanProcessor } from '@opentelemetry/sdk-trace-node'
 import { ATTR_SERVICE_NAME, ATTR_SERVICE_VERSION, ATTR_TELEMETRY_SDK_LANGUAGE } from '@opentelemetry/semantic-conventions'
@@ -33,6 +35,10 @@ const spanProcessor = endpoint
       return new SimpleSpanProcessor(new ConsoleSpanExporter())
     })()
 
+const logProcessor = endpoint
+  ? new BatchLogRecordProcessor(new OTLPLogExporter({ url: `${endpoint}/v1/logs`, headers }))
+  : undefined
+
 export const sdk = new NodeSDK({
   resource: resourceFromAttributes({
     [ATTR_SERVICE_NAME]: config.OTEL_SERVICE_NAME,
@@ -42,6 +48,7 @@ export const sdk = new NodeSDK({
     'telemetry.sdk.runtime': 'bun',
   }),
   spanProcessors: [spanProcessor],
+  logRecordProcessors: logProcessor ? [logProcessor] : [],
 })
 
 sdk.start()

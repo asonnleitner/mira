@@ -2,6 +2,7 @@ import type { SessionStatus, SessionType } from '~/db/schema'
 import type { InsertMessage } from '~/db/zod'
 import { and, count, desc, eq } from 'drizzle-orm'
 import { db, tables } from '~/db'
+import { logger } from '~/telemetry/logger'
 import { withDbSpan } from '~/telemetry/tracing'
 
 export async function findActiveSession(chatId: number) {
@@ -18,6 +19,8 @@ export async function findActiveSession(chatId: number) {
       .limit(1),
   )
 
+  logger.debug(`[db:sessions] findActiveSession chatId=${chatId} found=${!!rows[0]}`)
+
   return rows[0] ?? null
 }
 
@@ -32,10 +35,13 @@ export async function createSession(data: {
       .returning(),
   )
 
+  logger.debug(`[db:sessions] createSession chatId=${data.chatId} type=${data.type} sessionId=${session.id}`)
+
   return session
 }
 
 export async function updateSessionSdkId(sessionId: number, sdkSessionId: string | null) {
+  logger.debug(`[db:sessions] updateSessionSdkId sessionId=${sessionId} hasSdkId=${!!sdkSessionId}`)
   await withDbSpan(
     db.update(tables.therapySessions)
       .set({ sdkSessionId })
@@ -64,6 +70,7 @@ export async function updateSessionStatus(
   sessionId: number,
   status: SessionStatus,
 ) {
+  logger.debug(`[db:sessions] updateSessionStatus sessionId=${sessionId} status=${status}`)
   const [updated] = await withDbSpan(
     db.update(tables.therapySessions)
       .set({ status })

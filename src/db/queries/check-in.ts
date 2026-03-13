@@ -1,5 +1,6 @@
 import { and, eq, lt, sql } from 'drizzle-orm'
 import { db, tables } from '~/db'
+import { logger } from '~/telemetry/logger'
 import { withDbSpan } from '~/telemetry/tracing'
 
 export async function findOrCreatePreference(chatId: number) {
@@ -51,7 +52,7 @@ export async function findSessionsDueForCheckIn() {
   )
 
   // Filter in JS for interval-based logic (SQLite timestamp math is cleaner this way)
-  return sessions.filter((s) => {
+  const result = sessions.filter((s) => {
     const intervalMs = s.intervalDays * 24 * 60 * 60 * 1000
     const cutoff = new Date(now.getTime() - intervalMs)
 
@@ -65,6 +66,10 @@ export async function findSessionsDueForCheckIn() {
 
     return true
   })
+
+  logger.debug(`[db:check-in] findSessionsDueForCheckIn totalActive=${sessions.length} due=${result.length}`)
+
+  return result
 }
 
 export async function getPatientInfoForChat(chatId: number) {
@@ -112,6 +117,7 @@ export async function updateCheckInPreference(
   telegramId: number,
   data: { enabled?: boolean, intervalDays?: number },
 ) {
+  logger.debug(`[db:check-in] updateCheckInPreference chatId=${chatId} enabled=${data.enabled} intervalDays=${data.intervalDays}`)
   const [updated] = await withDbSpan(
     db.update(tables.checkInPreferences)
       .set({

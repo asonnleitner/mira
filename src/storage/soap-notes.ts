@@ -2,6 +2,7 @@ import type { SoapNote } from '~/db/zod'
 import { mkdir } from 'node:fs/promises'
 import { dirname } from 'node:path'
 import { ATTR_STORAGE_FILE_PATH } from '~/constants'
+import { logger } from '~/telemetry/logger'
 import { withSpan } from '~/telemetry/tracing'
 
 export async function writeSoapNote(
@@ -31,6 +32,8 @@ export async function writeSoapNote(
     ]
 
     await Bun.write(filePath, sections.join('\n'))
+
+    logger.debug(`[storage] Wrote SOAP note for session ${sessionId} to ${filePath}`)
   })
 }
 

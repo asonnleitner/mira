@@ -1,6 +1,7 @@
 import type { PatientProfile } from '~/db/schema/patients'
 import { eq } from 'drizzle-orm'
 import { db, tables } from '~/db'
+import { logger } from '~/telemetry/logger'
 import { withDbSpan } from '~/telemetry/tracing'
 
 export async function findPatientByTelegramId(telegramId: number) {
@@ -8,6 +9,8 @@ export async function findPatientByTelegramId(telegramId: number) {
     db.select().from(tables.patients)
       .where(eq(tables.patients.telegramId, telegramId)).limit(1),
   )
+  logger.debug(`[db:patients] findPatientByTelegramId telegramId=${telegramId} found=${!!rows[0]}`)
+
   return rows[0] ?? null
 }
 
@@ -19,6 +22,9 @@ export async function createPatient(data: {
   const [patient] = await withDbSpan(
     db.insert(tables.patients).values(data).returning(),
   )
+
+  logger.debug(`[db:patients] createPatient telegramId=${data.telegramId} patientId=${patient.id}`)
+
   return patient
 }
 
@@ -36,6 +42,8 @@ export async function completeOnboarding(telegramId: number, profile: PatientPro
       .where(eq(tables.patients.telegramId, telegramId))
       .returning(),
   )
+
+  logger.debug(`[db:patients] completeOnboarding telegramId=${telegramId} success=${!!updated}`)
 
   return updated
 }

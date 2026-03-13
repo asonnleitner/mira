@@ -65,6 +65,7 @@ function createNoteTakerTools(ctx: SessionContext) {
             verbatimQuote: args.verbatimQuote,
             clinicalRelevance: args.clinicalRelevance,
           })
+          logger.debug(`[note-taker] Saved artifact: type=${args.type} relevance=${args.clinicalRelevance}`)
           return {
             content: [{ type: 'text' as const, text: `Artifact saved: ${args.type}` }],
           }
@@ -130,6 +131,8 @@ export async function runNoteTaker(
   therapistResponse: string,
 ): Promise<void> {
   try {
+    logger.debug(`[note-taker] Starting for session ${ctx.sessionId} (${ctx.sessionType})`)
+
     const mcpTools = createNoteTakerTools(ctx)
     const hooks = createNoteTakerHooks(ctx.dataDir, ctx)
 
@@ -164,6 +167,8 @@ export async function runNoteTaker(
         },
       },
     )
+
+    logger.debug(`[note-taker] Completed for session ${ctx.sessionId}`)
   }
   catch (err) {
     logger.error('Note-taker failed:', err)
